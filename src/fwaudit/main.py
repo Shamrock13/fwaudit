@@ -1,7 +1,10 @@
 import typer
 import logging
+
 from loguru import logger
 logger.disable("ciscoconfparse")
+
+from compliance import check_cis_compliance, check_pci_compliance, check_nist_compliance
 
 from ciscoconfparse import CiscoConfParse
 
@@ -41,7 +44,8 @@ def check_redundant_rules(parse):
 @app.command()
 def audit(
     file: str = typer.Option(None, "--file", "-f", help="Path to firewall config file"),
-    vendor: str = typer.Option(None, "--vendor", "-v", help="Firewall vendor: paloalto, asa, pfsense")
+    vendor: str = typer.Option(None, "--vendor", "-v", help="Firewall vendor: paloalto, asa, pfsense"),
+    compliance: str = typer.Option(None, "--compliance", "-c", help="Compliance framework: cis, pci, nist")
 ):
     """FWAudit - Firewall configuration auditing tool"""
 
@@ -65,15 +69,31 @@ def audit(
                 typer.echo(f)
         else:
             typer.echo("[PASS] No issues found")
-    
-    high = [f for f in findings if "[HIGH]" in f]
-    medium = [f for f in findings if "[MEDIUM]" in f]
+        
+        if compliance:
+            typer.echo(f"\n--- {compliance.upper()} Compliance Checks ---")
+            if compliance == "cis":
+                cf = check_cis_compliance(parse)
+            elif compliance == "pci":
+                cf = check_pci_compliance(parse)
+            elif compliance == "nist":
+                cf = check_nist_compliance(parse)
+            else:
+                cf = []
+                typer.echo(f"Unknown framework: {compliance}. Use cis, pci, or nist")
 
-    typer.echo(f"\n--- Audit Summary ---")
-    typer.echo(f"High Severity:   {len(high)}")
-    typer.echo(f"Medium Severity: {len(medium)}")
-    typer.echo(f"Total Issues:    {len(findings)}")
-    typer.echo(f"---------------------")
+        for f in cf:
+            typer.echo(f)
+        findings += cf
+    
+        high = [f for f in findings if "[HIGH]" in f]
+        medium = [f for f in findings if "[MEDIUM]" in f]
+
+        typer.echo(f"\n--- Audit Summary ---")
+        typer.echo(f"High Severity:   {len(high)}")
+        typer.echo(f"Medium Severity: {len(medium)}")
+        typer.echo(f"Total Issues:    {len(findings)}")
+        typer.echo(f"---------------------")
     
 
 if __name__ == "__main__":
