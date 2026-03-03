@@ -241,3 +241,59 @@ def check_nist_compliance_forti(policies):
         findings.append("[NIST-HIGH] NIST SC-7: No boundary protection deny-all rule found")
 
     return findings
+
+def check_cis_compliance_pf(rules):
+    findings = []
+
+    for r in rules:
+        if r["type"] == "pass" and r["source"] == "1" and r["destination"] == "1":
+            findings.append(f"[CIS-HIGH] CIS Control: Rule '{r['descr']}' violates least privilege - any/any")
+        if r["type"] == "pass" and not r["log"]:
+            findings.append(f"[CIS-MEDIUM] CIS Control: Rule '{r['descr']}' missing logging")
+
+    has_deny_all = any(
+        r["type"] == "block" and r["source"] == "1" and r["destination"] == "1"
+        for r in rules
+    )
+    if not has_deny_all:
+        findings.append("[CIS-HIGH] CIS Control: No default deny-all rule found")
+
+    return findings
+
+
+def check_pci_compliance_pf(rules):
+    findings = []
+
+    for r in rules:
+        if r["type"] == "pass" and r["source"] == "1" and r["destination"] == "1":
+            findings.append(f"[PCI-HIGH] PCI Req 1.3: Rule '{r['descr']}' - direct routes to cardholder data prohibited")
+        if r["type"] == "pass" and not r["log"]:
+            findings.append(f"[PCI-MEDIUM] PCI Req 10.2: Rule '{r['descr']}' missing audit logging")
+
+    has_deny_all = any(
+        r["type"] == "block" and r["source"] == "1" and r["destination"] == "1"
+        for r in rules
+    )
+    if not has_deny_all:
+        findings.append("[PCI-HIGH] PCI Req 1.2: No explicit deny-all rule found")
+
+    return findings
+
+
+def check_nist_compliance_pf(rules):
+    findings = []
+
+    for r in rules:
+        if r["type"] == "pass" and r["source"] == "1" and r["destination"] == "1":
+            findings.append(f"[NIST-HIGH] NIST AC-6: Rule '{r['descr']}' violates least privilege principle")
+        if r["type"] == "pass" and not r["log"]:
+            findings.append(f"[NIST-MEDIUM] NIST AU-2: Rule '{r['descr']}' missing audit logging")
+
+    has_deny_all = any(
+        r["type"] == "block" and r["source"] == "1" and r["destination"] == "1"
+        for r in rules
+    )
+    if not has_deny_all:
+        findings.append("[NIST-HIGH] NIST SC-7: No boundary protection deny-all rule found")
+
+    return findings
