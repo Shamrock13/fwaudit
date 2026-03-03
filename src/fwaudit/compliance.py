@@ -167,3 +167,77 @@ def check_nist_compliance_pa(rules):
         findings.append("[NIST-HIGH] NIST SC-7: No boundary protection deny-all rule found")
 
     return findings
+
+def check_cis_compliance_forti(policies):
+    findings = []
+
+    for p in policies:
+        name = p.get("name") or f"Policy ID {p.get('id')}"
+        src = p.get("srcaddr", [])
+        dst = p.get("dstaddr", [])
+        action = p.get("action", "")
+        logtraffic = p.get("logtraffic", "")
+
+        if action == "accept" and "all" in src and "all" in dst:
+            findings.append(f"[CIS-HIGH] CIS Control: Rule '{name}' violates least privilege - source/dest all")
+        if action == "accept" and logtraffic not in ["all", "utm"]:
+            findings.append(f"[CIS-MEDIUM] CIS Control: Rule '{name}' missing logging")
+
+    has_deny_all = any(
+        p.get("action") == "deny" and "all" in p.get("srcaddr", []) and "all" in p.get("dstaddr", [])
+        for p in policies
+    )
+    if not has_deny_all:
+        findings.append("[CIS-HIGH] CIS Control: No default deny-all rule found")
+
+    return findings
+
+
+def check_pci_compliance_forti(policies):
+    findings = []
+
+    for p in policies:
+        name = p.get("name") or f"Policy ID {p.get('id')}"
+        src = p.get("srcaddr", [])
+        dst = p.get("dstaddr", [])
+        action = p.get("action", "")
+        logtraffic = p.get("logtraffic", "")
+
+        if action == "accept" and "all" in src and "all" in dst:
+            findings.append(f"[PCI-HIGH] PCI Req 1.3: Rule '{name}' - direct routes to cardholder data prohibited")
+        if action == "accept" and logtraffic not in ["all", "utm"]:
+            findings.append(f"[PCI-MEDIUM] PCI Req 10.2: Rule '{name}' missing audit logging")
+
+    has_deny_all = any(
+        p.get("action") == "deny" and "all" in p.get("srcaddr", []) and "all" in p.get("dstaddr", [])
+        for p in policies
+    )
+    if not has_deny_all:
+        findings.append("[PCI-HIGH] PCI Req 1.2: No explicit deny-all rule found")
+
+    return findings
+
+
+def check_nist_compliance_forti(policies):
+    findings = []
+
+    for p in policies:
+        name = p.get("name") or f"Policy ID {p.get('id')}"
+        src = p.get("srcaddr", [])
+        dst = p.get("dstaddr", [])
+        action = p.get("action", "")
+        logtraffic = p.get("logtraffic", "")
+
+        if action == "accept" and "all" in src and "all" in dst:
+            findings.append(f"[NIST-HIGH] NIST AC-6: Rule '{name}' violates least privilege principle")
+        if action == "accept" and logtraffic not in ["all", "utm"]:
+            findings.append(f"[NIST-MEDIUM] NIST AU-2: Rule '{name}' missing audit logging")
+
+    has_deny_all = any(
+        p.get("action") == "deny" and "all" in p.get("srcaddr", []) and "all" in p.get("dstaddr", [])
+        for p in policies
+    )
+    if not has_deny_all:
+        findings.append("[NIST-HIGH] NIST SC-7: No boundary protection deny-all rule found")
+
+    return findings

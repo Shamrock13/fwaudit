@@ -12,6 +12,8 @@ from paloalto import audit_paloalto
 
 from reporter import generate_report
 
+from fortinet import audit_fortinet
+
 app = typer.Typer()
 
 def check_any_any(parse):
@@ -145,33 +147,88 @@ def audit(
             for f in cf:
                 typer.echo(f)
             findings += cf
-            if report:
-                output = generate_report(findings, file, vendor, compliance)
-                typer.echo(f"\n📄 Report saved to: {output}")
 
-            high = [f for f in findings if "[HIGH]" in f and not any(x in f for x in ["PCI-", "CIS-", "NIST-"])]
-            medium = [f for f in findings if "[MEDIUM]" in f and not any(x in f for x in ["PCI-", "CIS-", "NIST-"])]
-            pci_high = [f for f in findings if "PCI-HIGH" in f]
-            pci_medium = [f for f in findings if "PCI-MEDIUM" in f]
-            cis_high = [f for f in findings if "CIS-HIGH" in f]
-            cis_medium = [f for f in findings if "CIS-MEDIUM" in f]
-            nist_high = [f for f in findings if "NIST-HIGH" in f]
-            nist_medium = [f for f in findings if "NIST-MEDIUM" in f]
+        if report:
+            output = generate_report(findings, file, vendor, compliance)
+            typer.echo(f"\n📄 Report saved to: {output}")
 
-            typer.echo(f"\n--- Audit Summary ---")
-            typer.echo(f"High Severity:         {len(high)}")
-            typer.echo(f"Medium Severity:       {len(medium)}")
-            if pci_high or pci_medium:
-                typer.echo(f"PCI Compliance High:   {len(pci_high)}")
-                typer.echo(f"PCI Compliance Medium: {len(pci_medium)}")
-            if cis_high or cis_medium:
-                typer.echo(f"CIS Compliance High:   {len(cis_high)}")
-                typer.echo(f"CIS Compliance Medium: {len(cis_medium)}")
-            if nist_high or nist_medium:
-                typer.echo(f"NIST Compliance High:  {len(nist_high)}")
-                typer.echo(f"NIST Compliance Medium:{len(nist_medium)}")
-            typer.echo(f"Total Issues:          {len(findings)}")
-            typer.echo(f"---------------------")
+        high = [f for f in findings if "[HIGH]" in f and not any(x in f for x in ["PCI-", "CIS-", "NIST-"])]
+        medium = [f for f in findings if "[MEDIUM]" in f and not any(x in f for x in ["PCI-", "CIS-", "NIST-"])]
+        pci_high = [f for f in findings if "PCI-HIGH" in f]
+        pci_medium = [f for f in findings if "PCI-MEDIUM" in f]
+        cis_high = [f for f in findings if "CIS-HIGH" in f]
+        cis_medium = [f for f in findings if "CIS-MEDIUM" in f]
+        nist_high = [f for f in findings if "NIST-HIGH" in f]
+        nist_medium = [f for f in findings if "NIST-MEDIUM" in f]
+
+        typer.echo(f"\n--- Audit Summary ---")
+        typer.echo(f"High Severity:         {len(high)}")
+        typer.echo(f"Medium Severity:       {len(medium)}")
+        if pci_high or pci_medium:
+            typer.echo(f"PCI Compliance High:   {len(pci_high)}")
+            typer.echo(f"PCI Compliance Medium: {len(pci_medium)}")
+        if cis_high or cis_medium:
+            typer.echo(f"CIS Compliance High:   {len(cis_high)}")
+            typer.echo(f"CIS Compliance Medium: {len(cis_medium)}")
+        if nist_high or nist_medium:
+            typer.echo(f"NIST Compliance High:  {len(nist_high)}")
+            typer.echo(f"NIST Compliance Medium:{len(nist_medium)}")
+        typer.echo(f"Total Issues:          {len(findings)}")
+        typer.echo(f"---------------------")
+
+    elif vendor == "fortinet":
+        from compliance import check_cis_compliance_forti, check_pci_compliance_forti, check_nist_compliance_forti
+
+        findings, policies = audit_fortinet(file)
+
+        if findings:
+            for f in findings:
+                typer.echo(f)
+        else:
+            typer.echo("[PASS] No issues found")
+
+        if compliance:
+            typer.echo(f"\n--- {compliance.upper()} Compliance Checks ---")
+            if compliance == "cis":
+                cf = check_cis_compliance_forti(policies)
+            elif compliance == "pci":
+                cf = check_pci_compliance_forti(policies)
+            elif compliance == "nist":
+                cf = check_nist_compliance_forti(policies)
+            else:
+                cf = []
+                typer.echo(f"Unknown framework: {compliance}. Use cis, pci, or nist")
+            for f in cf:
+                typer.echo(f)
+            findings += cf
+
+        if report:
+            output = generate_report(findings, file, vendor, compliance)
+            typer.echo(f"\n📄 Report saved to: {output}")
+
+        high = [f for f in findings if "[HIGH]" in f and not any(x in f for x in ["PCI-", "CIS-", "NIST-"])]
+        medium = [f for f in findings if "[MEDIUM]" in f and not any(x in f for x in ["PCI-", "CIS-", "NIST-"])]
+        pci_high = [f for f in findings if "PCI-HIGH" in f]
+        pci_medium = [f for f in findings if "PCI-MEDIUM" in f]
+        cis_high = [f for f in findings if "CIS-HIGH" in f]
+        cis_medium = [f for f in findings if "CIS-MEDIUM" in f]
+        nist_high = [f for f in findings if "NIST-HIGH" in f]
+        nist_medium = [f for f in findings if "NIST-MEDIUM" in f]
+
+        typer.echo(f"\n--- Audit Summary ---")
+        typer.echo(f"High Severity:         {len(high)}")
+        typer.echo(f"Medium Severity:       {len(medium)}")
+        if pci_high or pci_medium:
+            typer.echo(f"PCI Compliance High:   {len(pci_high)}")
+            typer.echo(f"PCI Compliance Medium: {len(pci_medium)}")
+        if cis_high or cis_medium:
+            typer.echo(f"CIS Compliance High:   {len(cis_high)}")
+            typer.echo(f"CIS Compliance Medium: {len(cis_medium)}")
+        if nist_high or nist_medium:
+            typer.echo(f"NIST Compliance High:  {len(nist_high)}")
+            typer.echo(f"NIST Compliance Medium:{len(nist_medium)}")
+        typer.echo(f"Total Issues:          {len(findings)}")
+        typer.echo(f"---------------------")
 
 if __name__ == "__main__":
     app()
