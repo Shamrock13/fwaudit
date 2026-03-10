@@ -93,7 +93,8 @@ def audit(
             licensed, message = check_license()
             if not licensed:
                 typer.echo(f"\n⚠️  Compliance checks require a valid license.")
-                typer.echo(f"   {message}")
+                typer.echo(f"   Purchase a license at: https://shamrock13.gumroad.com/l/flintlock")
+                typer.echo(f"   Once purchased, activate your key: flintlock --activate YOUR-LICENSE-KEY")
                 raise typer.Exit()
             typer.echo(f"\n--- {compliance.upper()} Compliance Checks ---")
             if compliance == "cis":
@@ -151,7 +152,8 @@ def audit(
             licensed, message = check_license()
             if not licensed:
                 typer.echo(f"\n⚠️  Compliance checks require a valid license.")
-                typer.echo(f"   {message}")
+                typer.echo(f"   Purchase a license at: https://shamrock13.gumroad.com/l/flintlock")
+                typer.echo(f"   Once purchased, activate your key: flintlock --activate YOUR-LICENSE-KEY")
                 raise typer.Exit()
             typer.echo(f"\n--- {compliance.upper()} Compliance Checks ---")
             from .paloalto import parse_paloalto
@@ -213,7 +215,8 @@ def audit(
             licensed, message = check_license()
             if not licensed:
                 typer.echo(f"\n⚠️  Compliance checks require a valid license.")
-                typer.echo(f"   {message}")
+                typer.echo(f"   Purchase a license at: https://shamrock13.gumroad.com/l/flintlock")
+                typer.echo(f"   Once purchased, activate your key: flintlock --activate YOUR-LICENSE-KEY")
                 raise typer.Exit()
             typer.echo(f"\n--- {compliance.upper()} Compliance Checks ---")
             if compliance == "cis":
@@ -272,7 +275,8 @@ def audit(
             licensed, message = check_license()
             if not licensed:
                 typer.echo(f"\n⚠️  Compliance checks require a valid license.")
-                typer.echo(f"   {message}")
+                typer.echo(f"   Purchase a license at: https://shamrock13.gumroad.com/l/flintlock")
+                typer.echo(f"   Once purchased, activate your key: flintlock --activate YOUR-LICENSE-KEY")
                 raise typer.Exit()
             typer.echo(f"\n--- {compliance.upper()} Compliance Checks ---")
             if compliance == "cis":
