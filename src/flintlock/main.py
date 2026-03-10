@@ -1,4 +1,7 @@
 import typer
+from rich.console import Console
+
+_console = Console()
 
 from .license import activate_license, check_license, deactivate_license
 
@@ -93,7 +96,7 @@ def audit(
             licensed, message = check_license()
             if not licensed:
                 typer.echo(f"\n⚠️  Compliance checks require a valid license.")
-                typer.echo(f"   Purchase a license at: https://shamrock13.gumroad.com/l/flintlock")
+                _console.print("   Purchase a license at: [link=https://shamrock13.gumroad.com/l/flintlock]https://shamrock13.gumroad.com/l/flintlock[/link]")
                 typer.echo(f"   Once purchased, activate your key: flintlock --activate YOUR-LICENSE-KEY")
                 raise typer.Exit()
             typer.echo(f"\n--- {compliance.upper()} Compliance Checks ---")
@@ -152,7 +155,7 @@ def audit(
             licensed, message = check_license()
             if not licensed:
                 typer.echo(f"\n⚠️  Compliance checks require a valid license.")
-                typer.echo(f"   Purchase a license at: https://shamrock13.gumroad.com/l/flintlock")
+                _console.print("   Purchase a license at: [link=https://shamrock13.gumroad.com/l/flintlock]https://shamrock13.gumroad.com/l/flintlock[/link]")
                 typer.echo(f"   Once purchased, activate your key: flintlock --activate YOUR-LICENSE-KEY")
                 raise typer.Exit()
             typer.echo(f"\n--- {compliance.upper()} Compliance Checks ---")
@@ -215,7 +218,7 @@ def audit(
             licensed, message = check_license()
             if not licensed:
                 typer.echo(f"\n⚠️  Compliance checks require a valid license.")
-                typer.echo(f"   Purchase a license at: https://shamrock13.gumroad.com/l/flintlock")
+                _console.print("   Purchase a license at: [link=https://shamrock13.gumroad.com/l/flintlock]https://shamrock13.gumroad.com/l/flintlock[/link]")
                 typer.echo(f"   Once purchased, activate your key: flintlock --activate YOUR-LICENSE-KEY")
                 raise typer.Exit()
             typer.echo(f"\n--- {compliance.upper()} Compliance Checks ---")
@@ -275,7 +278,7 @@ def audit(
             licensed, message = check_license()
             if not licensed:
                 typer.echo(f"\n⚠️  Compliance checks require a valid license.")
-                typer.echo(f"   Purchase a license at: https://shamrock13.gumroad.com/l/flintlock")
+                _console.print("   Purchase a license at: [link=https://shamrock13.gumroad.com/l/flintlock]https://shamrock13.gumroad.com/l/flintlock[/link]")
                 typer.echo(f"   Once purchased, activate your key: flintlock --activate YOUR-LICENSE-KEY")
                 raise typer.Exit()
             typer.echo(f"\n--- {compliance.upper()} Compliance Checks ---")

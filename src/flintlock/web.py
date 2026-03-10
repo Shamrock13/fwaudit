@@ -247,7 +247,7 @@ def run_audit():
             if not licensed:
                 license_warning = (
                     "Compliance checks require a valid license. "
-                    "Purchase one at https://shamrock13.gumroad.com/l/flintlock. "
+                    'Purchase one at <a href="https://shamrock13.gumroad.com/l/flintlock" target="_blank" rel="noopener">shamrock13.gumroad.com/l/flintlock</a>. '
                     "Once purchased, enter your key using the Licensed/Unlicensed badge in the top-right corner of the app."
                 )
             else:

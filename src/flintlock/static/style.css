@@ -585,6 +585,8 @@ select:focus, input[type="text"]:focus {
 }
 
 .alert-warning { background: var(--alert-warn-bg); border: 1px solid var(--alert-warn-border); color: var(--alert-warn-text); }
+.alert-warning a { color: var(--alert-warn-text); font-weight: 600; }
+.alert-warning a:hover { opacity: 0.8; }
 .alert-error   { background: var(--alert-err-bg);  border: 1px solid var(--alert-err-border);  color: var(--alert-err-text); }
 
 /* ===== License modal internals ===== */
