@@ -1,8 +1,9 @@
 # 🔥 Flintlock
 
-**Flintlock** is a firewall configuration auditing tool built for network security engineers. It detects common security misconfigurations, scores findings by severity, and generates polished PDF reports. Run it as a **web app** or from the **CLI** — deployable in minutes via Docker Compose.
+**Flintlock** is a firewall configuration auditing tool with both a web UI and CLI. It detects common security misconfigurations, generates scored severity reports, and optionally checks against compliance frameworks like CIS, PCI-DSS, and NIST. Deployable in minutes via Docker Compose.
 
-> 🌐 **[flintlock.sham.cloud](https://flintlock.sham.cloud)** — documentation & license purchase
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/Shamrock13)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Flintlock-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/shamrock13)
 
 ---
 
@@ -22,24 +23,23 @@
 ### Free (Open Source)
 - **Web UI** — browser-based interface, no terminal required
 - **Auto-detect vendor** — upload a config and Flintlock identifies the vendor automatically
-- **Vendor validation** — rejects mismatched file/vendor combinations with a clear error
 - Detect overly permissive any/any rules
 - Detect permit rules missing logging
 - Detect missing deny-all rule
 - Detect redundant/shadowed rules
 - Severity scoring (HIGH / MEDIUM)
-- Results sorted high → medium, with clickable severity filters
+- Results sorted high → medium, with clickable filters per severity
 - **PDF report export** — download a color-coded findings report at any time
-- **Light and dark mode** — preference saved automatically across sessions
-- CLI output with full audit summary
+- Light and dark mode (preference saved automatically)
+- CLI output with audit summary
 
-### Paid (License Required — $49)
+### Paid (License Required)
 - CIS Benchmark compliance checks
-- PCI-DSS compliance checks (Req 1.2, 1.3, 10.2)
-- NIST SP 800-41 compliance checks (AC-6, AU-2, SC-7)
-- Specific control references per finding
+- PCI-DSS compliance checks
+- NIST SP 800-41 compliance checks
+- Specific control references (e.g. PCI Req 1.3, NIST AC-6)
 
-> 💳 **[Purchase a license on Gumroad](https://shamrock13.gumroad.com/l/flintlock)**
+> 💳 **Purchase a license at [Gumroad](https://shamrock13.gumroad.com/l/flintlock)**
 
 ---
 
@@ -47,7 +47,7 @@
 
 ### Option 1 — Docker Compose (Recommended)
 
-No Python environment setup required. Works on any machine with Docker.
+The fastest way to get Flintlock running. No Python environment setup required.
 
 **Requirements:** Docker Desktop or OrbStack
 
@@ -59,7 +59,7 @@ docker compose up --build
 
 Open **http://localhost:8080** in your browser.
 
-Uploaded configs and your license key are persisted in a Docker volume across restarts. To set a custom license secret, create a `.env` file in the project root:
+Uploaded reports and your license key are persisted in a Docker volume across restarts. To set a custom license secret, create a `.env` file in the project root:
 
 ```
 FWAUDIT_SECRET=your-secret-here
@@ -97,29 +97,28 @@ PYTHONPATH=src python -m flintlock.main --file config.txt --vendor asa
 
 ## Web UI
 
-The web interface provides the full Flintlock feature set without a terminal.
+The web interface provides the full feature set without needing a terminal.
 
 ### Running an audit
 1. Open **http://localhost:8080** (Docker) or **http://localhost:5000** (local)
 2. Upload a firewall config file
-3. Select a vendor or leave on **Auto-detect** — Flintlock identifies the vendor from file content
+3. Select a vendor or leave on **Auto-detect** — Flintlock will identify it from the file content
 4. Optionally select a compliance framework (license required)
 5. Check **Generate PDF Report** if you want a downloadable report
 6. Click **Run Audit**
 
 ### Results
-- Findings displayed inline, sorted highest → lowest severity
+- Findings are displayed inline, sorted from highest to lowest severity
 - Click the **High**, **Medium**, or **Total** summary boxes to filter the results list
 - Click an active filter again to clear it
-- Compliance findings shown in a separate blue section when a framework is selected
 - If a PDF was generated, a download link appears below the findings
 
 ### License management
-- The **Licensed / Unlicensed** badge in the top-right opens the license modal
+- The **Licensed / Unlicensed** badge in the top-right corner opens the license modal
 - Enter your license key to activate; click Deactivate to remove it
 
 ### Light / Dark mode
-- Click the ☀ / 🌙 button in the header — preference is saved automatically
+- Click the ☀ / 🌙 button in the header to toggle — preference is saved automatically
 
 ---
 
@@ -137,13 +136,13 @@ PYTHONPATH=src python -m flintlock.main --file config.txt --vendor asa
 PYTHONPATH=src python -m flintlock.main --file config.txt --vendor asa --compliance pci
 ```
 
-### Export PDF report
+### Export PDF report (free — no license required)
 
 ```bash
 PYTHONPATH=src python -m flintlock.main --file config.txt --vendor asa --report
 ```
 
-### Export PDF report with compliance checks
+### Export PDF report with compliance checks (license required)
 
 ```bash
 PYTHONPATH=src python -m flintlock.main --file config.txt --vendor asa --compliance pci --report
@@ -166,7 +165,7 @@ PYTHONPATH=src python -m flintlock.main --file config.txt --vendor asa --complia
 --compliance nist
 ```
 
-### License activation
+### License activation (CLI)
 
 ```bash
 # Activate
@@ -214,11 +213,10 @@ Total Issues:          7
 | Missing deny-all rule | HIGH | Free |
 | Permit rules missing logging | MEDIUM | Free |
 | Redundant/shadowed rules | MEDIUM | Free |
+| PDF report export | — | Free |
 | CIS Benchmark controls | HIGH/MEDIUM | Paid |
-| PCI-DSS requirements (Req 1.2, 1.3, 10.2) | HIGH/MEDIUM | Paid |
-| NIST SP 800-41 controls (AC-6, AU-2, SC-7) | HIGH/MEDIUM | Paid |
-
-All checks run across all four supported vendors.
+| PCI-DSS requirements | HIGH/MEDIUM | Paid |
+| NIST SP 800-41 controls | HIGH/MEDIUM | Paid |
 
 ---
 
@@ -226,22 +224,30 @@ All checks run across all four supported vendors.
 
 - [x] Web UI with file upload and inline results
 - [x] Docker Compose deployment
-- [x] Auto vendor detection with format validation
+- [x] Auto vendor detection
 - [x] Clickable severity filters
-- [x] Light / dark mode with persistent preference
-- [x] PDF report with color-coded findings
-- [x] License management via web UI and CLI
+- [x] Light / dark mode
+- [x] PDF report redesign
 - [ ] Live SSH/API connection mode
-- [ ] Fortinet v2 extended checks
+- [ ] Fortinet v2 checks
 - [ ] AWS Security Group support
 - [ ] Azure NSG support
 - [ ] Rule change diff (compare two configs)
 
 ---
 
+## Support the Project
+
+Flintlock is free and open source. If it's saved you time or caught something in your configs, consider buying me a coffee — it goes directly toward keeping this maintained and adding new features.
+
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor%20on%20GitHub-%E2%9D%A4-ea4aaa?logo=github-sponsors&logoColor=white&style=for-the-badge)](https://github.com/sponsors/Shamrock13)
+[![Ko-fi](https://img.shields.io/badge/Buy%20me%20a%20coffee-Ko--fi-FF5E5B?logo=ko-fi&logoColor=white&style=for-the-badge)](https://ko-fi.com/shamrock13)
+
+---
+
 ## License
 
-The core tool is open source under the MIT License. The compliance module requires a paid license key — available on [Gumroad](https://shamrock13.gumroad.com/l/flintlock).
+The core tool is open source under the MIT License. The compliance module requires a paid license key.
 
 ---
 
