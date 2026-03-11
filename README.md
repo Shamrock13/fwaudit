@@ -10,9 +10,9 @@
 
 | Vendor | Config Format | Status |
 |---|---|---|
-| Cisco ASA | Text | ✅ Supported |
+| Cisco | Text | ✅ Supported |
 | Palo Alto Networks | XML | ✅ Supported |
-| Fortinet FortiGate | Text | ✅ Supported |
+| Fortinet | Text | ✅ Supported |
 | pfSense | XML | ✅ Supported |
 
 ---
@@ -214,12 +214,11 @@ Total Issues:          7
 | Missing deny-all rule | HIGH | Free |
 | Permit rules missing logging | MEDIUM | Free |
 | Redundant/shadowed rules | MEDIUM | Free |
-| PDF report export | — | Free |
-| Auto vendor detection | — | Free |
-| Light / dark mode | — | Free |
 | CIS Benchmark controls | HIGH/MEDIUM | Paid |
-| PCI-DSS requirements | HIGH/MEDIUM | Paid |
-| NIST SP 800-41 controls | HIGH/MEDIUM | Paid |
+| PCI-DSS requirements (Req 1.2, 1.3, 10.2) | HIGH/MEDIUM | Paid |
+| NIST SP 800-41 controls (AC-6, AU-2, SC-7) | HIGH/MEDIUM | Paid |
+
+All checks run across all four supported vendors.
 
 ---
 
