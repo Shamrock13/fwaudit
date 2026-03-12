@@ -1,6 +1,6 @@
 # 🔥 Flintlock
 
-**Flintlock** is a firewall configuration auditing tool with both a web UI and CLI. It detects common security misconfigurations, generates scored severity reports, and optionally checks against compliance frameworks like CIS, PCI-DSS, and NIST. Deployable in minutes via Docker Compose.
+**Flintlock** is a firewall configuration auditing tool with a web UI and CLI. It detects common security misconfigurations, generates scored severity reports, compares configs across time, and connects directly to live devices via SSH. Deployable in minutes via Docker Compose.
 
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/Shamrock13)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Flintlock-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/shamrock13)
@@ -11,10 +11,12 @@
 
 | Vendor | Config Format | Status |
 |---|---|---|
-| Cisco | Text | ✅ Supported |
+| Cisco ASA | Text | ✅ Supported |
 | Palo Alto Networks | XML | ✅ Supported |
 | Fortinet | Text | ✅ Supported |
 | pfSense | XML | ✅ Supported |
+| AWS Security Groups | JSON | ✅ Supported |
+| Azure NSG | JSON | ✅ Supported |
 
 ---
 
@@ -22,16 +24,25 @@
 
 ### Free (Open Source)
 - **Web UI** — browser-based interface, no terminal required
-- **Auto-detect vendor** — upload a config and Flintlock identifies the vendor automatically
+- **Auto-detect vendor** — Flintlock identifies the vendor from file content automatically
+- **Live SSH connection** — connect directly to a Cisco ASA, Fortinet, or Palo Alto device to pull and audit its running config in real time
+- **Rule change diff** — upload two configs of the same vendor to see exactly what was added, removed, and unchanged
+- **Audit History** — save audit results and browse them later with vendor filter, sort, and filename search
+- **Archival reviews** — select any two saved audits and compare them: see resolved findings, new issues, and delta scores
+- **Activity Log** — full record of every audit, SSH attempt, and config diff, including failures
 - Detect overly permissive any/any rules
 - Detect permit rules missing logging
 - Detect missing deny-all rule
 - Detect redundant/shadowed rules
+- Fortinet enhanced checks: disabled policies, all-service rules, insecure services (Telnet/HTTP/FTP), unnamed policies
+- AWS: open ingress to 0.0.0.0/0, unrestricted port ranges
+- Azure: inbound Any rules, overly permissive NSG rules
 - Severity scoring (HIGH / MEDIUM)
-- Results sorted high → medium, with clickable filters per severity
-- **PDF report export** — download a color-coded findings report at any time
+- Clickable severity filters on results
+- **PDF report export** — download a color-coded findings report
 - Light and dark mode (preference saved automatically)
 - CLI output with audit summary
+- Docker Compose deployment
 
 ### Paid (License Required)
 - CIS Benchmark compliance checks
@@ -59,7 +70,7 @@ docker compose up --build
 
 Open **http://localhost:8080** in your browser.
 
-Uploaded reports and your license key are persisted in a Docker volume across restarts. To set a custom license secret, create a `.env` file in the project root:
+Uploaded reports, audit history, activity log, and your license key are all persisted in a Docker volume across restarts. To set a custom secret, create a `.env` file in the project root:
 
 ```
 FWAUDIT_SECRET=your-secret-here
@@ -74,7 +85,7 @@ docker compose down
 
 ### Option 2 — Local Python
 
-**Requirements:** Python 3.8+
+**Requirements:** Python 3.8+, and `paramiko` for live SSH support
 
 ```bash
 git clone https://github.com/Shamrock13/flintlock.git
@@ -97,28 +108,32 @@ PYTHONPATH=src python -m flintlock.main --file config.txt --vendor asa
 
 ## Web UI
 
-The web interface provides the full feature set without needing a terminal.
+The web interface provides the full feature set without needing a terminal. It is organized into five tabs.
 
-### Running an audit
-1. Open **http://localhost:8080** (Docker) or **http://localhost:5000** (local)
-2. Upload a firewall config file
-3. Select a vendor or leave on **Auto-detect** — Flintlock will identify it from the file content
-4. Optionally select a compliance framework (license required)
-5. Check **Generate PDF Report** if you want a downloadable report
-6. Click **Run Audit**
+### File Audit
+1. Upload a firewall config file (text, XML, or JSON)
+2. Select a vendor or leave on **Auto-detect**
+3. Optionally select a compliance framework (license required)
+4. Check **Generate PDF Report** and/or **Save to Audit History** as needed
+5. Click **Run Audit**
 
-### Results
-- Findings are displayed inline, sorted from highest to lowest severity
-- Click the **High**, **Medium**, or **Total** summary boxes to filter the results list
-- Click an active filter again to clear it
-- If a PDF was generated, a download link appears below the findings
+Results are sorted high → medium. Click the summary boxes to filter by severity.
 
-### License management
-- The **Licensed / Unlicensed** badge in the top-right corner opens the license modal
-- Enter your license key to activate; click Deactivate to remove it
+### Compare Configs
+Upload two configs of the same vendor to see a line-by-line diff of what changed — rules added, removed, and unchanged. Auto-detects vendor from the baseline file.
 
-### Light / Dark mode
-- Click the ☀ / 🌙 button in the header to toggle — preference is saved automatically
+### Live Connect
+Connect directly to a device over SSH to pull and audit its running configuration without touching a file. Supported vendors: **Cisco ASA**, **Fortinet**, **Palo Alto Networks**.
+
+- Credentials are used only for the single connection and are never stored
+- Successful audits are automatically saved to Audit History
+- Failed connections are recorded in the Activity Log only
+
+### Audit History
+Browse all saved audits. Filter by vendor, sort by date or issue count, and search by filename. Select any two entries and click **Compare Selected** to see a full diff of findings between the two audits — including resolved issues, new issues, and HIGH/MEDIUM/Total deltas. The older audit is always used as the baseline regardless of selection order.
+
+### Activity Log
+A complete record of every action taken in Flintlock — file audits, SSH connections, and config diffs — including failures. Shows action type, vendor, timestamp, and error message for failed attempts. Entries can be deleted individually or cleared in bulk.
 
 ---
 
@@ -140,12 +155,6 @@ PYTHONPATH=src python -m flintlock.main --file config.txt --vendor asa --complia
 
 ```bash
 PYTHONPATH=src python -m flintlock.main --file config.txt --vendor asa --report
-```
-
-### Export PDF report with compliance checks (license required)
-
-```bash
-PYTHONPATH=src python -m flintlock.main --file config.txt --vendor asa --compliance pci --report
 ```
 
 ### Supported vendors
@@ -180,7 +189,7 @@ PYTHONPATH=src python -m flintlock.main --deactivate
 ## Example CLI Output
 
 ```
-Flintlock v1.0 — Starting audit of firewall.xml (paloalto)
+Flintlock — Starting audit of firewall.xml (paloalto)
 
 [HIGH] Overly permissive rule 'Allow-Any-Any': source=any destination=any
 [HIGH] No explicit deny-all rule found
@@ -207,16 +216,24 @@ Total Issues:          7
 
 ## Checks Performed
 
-| Check | Severity | Tier |
-|---|---|---|
-| Any/any permit rules | HIGH | Free |
-| Missing deny-all rule | HIGH | Free |
-| Permit rules missing logging | MEDIUM | Free |
-| Redundant/shadowed rules | MEDIUM | Free |
-| PDF report export | — | Free |
-| CIS Benchmark controls | HIGH/MEDIUM | Paid |
-| PCI-DSS requirements | HIGH/MEDIUM | Paid |
-| NIST SP 800-41 controls | HIGH/MEDIUM | Paid |
+| Check | Severity | Vendors | Tier |
+|---|---|---|---|
+| Any/any permit rules | HIGH | All | Free |
+| Missing deny-all rule | HIGH | Cisco, Palo Alto, pfSense | Free |
+| Permit rules missing logging | MEDIUM | Cisco, Palo Alto | Free |
+| Redundant/shadowed rules | MEDIUM | All | Free |
+| Disabled policies | MEDIUM | Fortinet | Free |
+| All-service rules | MEDIUM | Fortinet | Free |
+| Insecure services allowed (Telnet/HTTP/FTP) | MEDIUM | Fortinet | Free |
+| Unnamed policies | MEDIUM | Fortinet | Free |
+| Open ingress 0.0.0.0/0 | HIGH | AWS | Free |
+| Unrestricted port ranges | MEDIUM | AWS | Free |
+| Inbound Any rules | HIGH | Azure | Free |
+| Overly permissive NSG rules | MEDIUM | Azure | Free |
+| PDF report export | — | All | Free |
+| CIS Benchmark controls | HIGH/MEDIUM | Cisco, PA, Fortinet, pfSense | Paid |
+| PCI-DSS requirements | HIGH/MEDIUM | Cisco, PA, Fortinet, pfSense | Paid |
+| NIST SP 800-41 controls | HIGH/MEDIUM | Cisco, PA, Fortinet, pfSense | Paid |
 
 ---
 
@@ -228,11 +245,16 @@ Total Issues:          7
 - [x] Clickable severity filters
 - [x] Light / dark mode
 - [x] PDF report redesign
-- [ ] Live SSH/API connection mode
-- [ ] Fortinet v2 checks
-- [ ] AWS Security Group support
-- [ ] Azure NSG support
-- [ ] Rule change diff (compare two configs)
+- [x] Live SSH/API connection mode
+- [x] Fortinet v2 checks
+- [x] AWS Security Group support
+- [x] Azure NSG support
+- [x] Rule change diff (compare two configs)
+- [x] Activity Log (usage monitoring)
+- [x] Archival reviews (compare historical configs)
+- [ ] Archival review trends & scoring graphs
+- [ ] Scheduled audits
+- [ ] Multi-device bulk audit
 
 ---
 
