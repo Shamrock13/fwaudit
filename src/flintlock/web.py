@@ -1,7 +1,7 @@
 import os
 import uuid
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_file
 from ciscoconfparse import CiscoConfParse
 
 from .license import check_license, activate_license, deactivate_license
