@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Flintlock &mdash; Firewall Audit</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script>
     (function () {
-      const t = localStorage.getItem("flintlock-theme") || "light";
+      const t = localStorage.getItem("flintlock-theme") || "auto";
       document.documentElement.setAttribute("data-theme", t);
     })();
   </script>
@@ -23,7 +24,7 @@
         <span class="logo-sub">Firewall Security Auditor</span>
       </div>
       <div class="header-actions">
-        <button class="theme-toggle" id="themeToggle" title="Toggle light / dark mode" aria-label="Toggle theme">
+        <button class="theme-toggle" id="themeToggle" title="Theme: Light / Dark / Auto" aria-label="Toggle theme">
           <span id="themeIcon">&#9788;</span>
         </button>
         <button class="badge-btn" id="licenseBadgeBtn" title="Manage license">
@@ -82,6 +83,10 @@
         <h2 class="card-title">Run Audit</h2>
         <form id="auditForm" enctype="multipart/form-data">
           <div class="form-grid">
+            <div class="form-group" style="grid-column:1/-1">
+              <label for="deviceTag">Device Tag</label>
+              <input type="text" id="deviceTag" name="tag" placeholder="e.g. ASA01, FortiGate-HQ&hellip;" autocomplete="off" maxlength="64" required />
+            </div>
             <div class="form-group">
               <label for="config">Config File</label>
               <div class="file-input-wrapper">
@@ -93,12 +98,12 @@
               <label for="vendor">Vendor</label>
               <select id="vendor" name="vendor">
                 <option value="auto" selected>Auto-detect (recommended)</option>
-                <option value="asa">Cisco</option>
-                <option value="paloalto">Palo Alto Networks</option>
-                <option value="fortinet">Fortinet</option>
-                <option value="pfsense">pfSense</option>
                 <option value="aws">AWS Security Group</option>
                 <option value="azure">Azure NSG</option>
+                <option value="asa">Cisco</option>
+                <option value="fortinet">Fortinet</option>
+                <option value="paloalto">Palo Alto Networks</option>
+                <option value="pfsense">pfSense</option>
               </select>
             </div>
             <div class="form-group">
@@ -173,9 +178,11 @@
               <label for="diffVendor">Vendor</label>
               <select id="diffVendor" name="vendor">
                 <option value="auto" selected>Auto-detect (recommended)</option>
+                <option value="aws">AWS Security Group</option>
+                <option value="azure">Azure NSG</option>
                 <option value="asa">Cisco</option>
-                <option value="paloalto">Palo Alto Networks</option>
                 <option value="fortinet">Fortinet</option>
+                <option value="paloalto">Palo Alto Networks</option>
                 <option value="pfsense">pfSense</option>
               </select>
             </div>
@@ -205,15 +212,19 @@
         <h2 class="card-title">Live SSH Connection</h2>
         <p class="card-desc">Connect directly to a device to pull its running configuration and audit it in real time.</p>
         <div class="alert alert-info">
-          Supported: <strong>Cisco ASA</strong>, <strong>Fortinet</strong>, <strong>Palo Alto Networks</strong> (SSH).
+          Supported: <strong>Cisco</strong>, <strong>Fortinet</strong>, <strong>Palo Alto Networks</strong> (SSH).
           Credentials are used only for the single connection and are never stored.
         </div>
         <form id="connectForm">
           <div class="form-grid connect-grid">
+            <div class="form-group" style="grid-column:1/-1">
+              <label for="connDeviceTag">Device Tag</label>
+              <input type="text" id="connDeviceTag" name="tag" placeholder="e.g. ASA01, FortiGate-HQ&hellip;" autocomplete="off" maxlength="64" required />
+            </div>
             <div class="form-group">
               <label for="connVendor">Vendor</label>
               <select id="connVendor" name="vendor">
-                <option value="asa">Cisco ASA</option>
+                <option value="asa">Cisco</option>
                 <option value="fortinet">Fortinet</option>
                 <option value="paloalto">Palo Alto Networks</option>
               </select>
@@ -280,12 +291,12 @@
             <label class="filter-label">Vendor</label>
             <select id="historyVendorFilter">
               <option value="">All vendors</option>
-              <option value="asa">Cisco</option>
-              <option value="paloalto">Palo Alto Networks</option>
-              <option value="fortinet">Fortinet</option>
-              <option value="pfsense">pfSense</option>
               <option value="aws">AWS Security Group</option>
               <option value="azure">Azure NSG</option>
+              <option value="asa">Cisco</option>
+              <option value="fortinet">Fortinet</option>
+              <option value="paloalto">Palo Alto Networks</option>
+              <option value="pfsense">pfSense</option>
             </select>
           </div>
           <div class="history-filter-group">
@@ -304,6 +315,33 @@
         </div>
         <div id="historyList" class="history-list">
           <p class="text-muted">Loading&hellip;</p>
+        </div>
+      </div>
+
+      <!-- Trends chart -->
+      <div class="card" id="trendsCard">
+        <div class="results-header">
+          <h2 class="card-title" style="margin-bottom:0">Score Trends</h2>
+          <button class="btn-secondary" id="refreshTrendsBtn" style="font-size:0.8rem;padding:0.3rem 0.75rem">&#8635; Refresh</button>
+        </div>
+        <p class="card-desc">Security score over time per device. Score = 100 &minus; (HIGH &times; 10) &minus; (MEDIUM &times; 3), min 0.</p>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;" id="trendsFilters">
+          <div class="history-filter-group">
+            <label class="filter-label">Vendor</label>
+            <select id="trendsVendorFilter">
+              <option value="">All vendors</option>
+            </select>
+          </div>
+          <div class="history-filter-group">
+            <label class="filter-label">Device Tag</label>
+            <select id="trendsDeviceFilter">
+              <option value="">All devices</option>
+            </select>
+          </div>
+        </div>
+        <div id="trendsEmpty" class="hidden"><p class="text-muted">No trend data yet. Save two or more audits for the same device to see trends.</p></div>
+        <div id="trendsChartWrap" style="position:relative;max-height:320px;">
+          <canvas id="trendsChart"></canvas>
         </div>
       </div>
 
@@ -343,13 +381,14 @@
   const themeIcon = document.getElementById("themeIcon");
   function applyTheme(theme) {
     html.setAttribute("data-theme", theme);
-    themeIcon.innerHTML = theme === "dark" ? "&#9790;" : "&#9788;";
+    themeIcon.innerHTML = theme === "dark" ? "&#9790;" : theme === "auto" ? "&#9681;" : "&#9788;";
     localStorage.setItem("flintlock-theme", theme);
   }
-  applyTheme(html.getAttribute("data-theme") || "light");
-  document.getElementById("themeToggle").addEventListener("click", () =>
-    applyTheme(html.getAttribute("data-theme") === "dark" ? "light" : "dark")
-  );
+  applyTheme(html.getAttribute("data-theme") || "auto");
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    const cur = html.getAttribute("data-theme") || "auto";
+    applyTheme(cur === "light" ? "dark" : cur === "dark" ? "auto" : "light");
+  });
 
   // ═══════════════════════════════════════════════════════ LICENSE MODAL ══
   const modal = document.getElementById("licenseModal");
@@ -401,7 +440,7 @@
   function switchTab(tabId) {
     tabBtns.forEach(b => b.classList.toggle("tab-active", b.dataset.tab === tabId));
     tabPanels.forEach(p => p.classList.toggle("hidden", p.id !== "tab-" + tabId));
-    if (tabId === "history")  loadHistory();
+    if (tabId === "history")  { loadHistory(); loadTrends(); }
     if (tabId === "activity") loadActivity();
   }
   tabBtns.forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
@@ -447,6 +486,130 @@
     });
   }
 
+  // ═══════════════════════════════════════════════ TRENDS CHART ══
+  let trendsChartInstance = null;
+  let trendsData = [];
+
+  const CHART_COLORS = [
+    "#4488FF","#FF6868","#44BB88","#FFAA00","#AA44FF","#FF8844","#44CCFF","#FF44AA"
+  ];
+
+  async function loadTrends() {
+    try {
+      const res  = await fetch("/archive/trends");
+      trendsData = await res.json();
+      renderTrends(trendsData);
+    } catch (_) {}
+  }
+
+  function renderTrends(data) {
+    // Populate vendor dropdown from full trendsData
+    const vendorSel  = document.getElementById("trendsVendorFilter");
+    const deviceSel  = document.getElementById("trendsDeviceFilter");
+    const selVendor  = vendorSel.value;
+    const selDevice  = deviceSel.value;
+
+    const allVendors = [...new Set(trendsData.map(e => e.vendor).filter(Boolean))].sort();
+    vendorSel.innerHTML = `<option value="">All vendors</option>` +
+      allVendors.map(v => `<option value="${escHtml(v)}" ${v === selVendor ? "selected" : ""}>${escHtml(VENDOR_LABELS[v] || v)}</option>`).join("");
+
+    // Populate device dropdown (filtered by vendor if selected)
+    const deviceSource = selVendor ? trendsData.filter(e => e.vendor === selVendor) : trendsData;
+    const allDevices = [...new Set(deviceSource.map(e => e.tag || e.filename).filter(Boolean))].sort();
+    deviceSel.innerHTML = `<option value="">All devices</option>` +
+      allDevices.map(d => `<option value="${escHtml(d)}" ${d === selDevice ? "selected" : ""}>${escHtml(d)}</option>`).join("");
+
+    // Apply filters
+    let scored = data.filter(e => e.score !== null && e.score !== undefined);
+    if (selVendor) scored = scored.filter(e => e.vendor === selVendor);
+    const effectiveDevice = allDevices.includes(selDevice) ? selDevice : "";
+    if (effectiveDevice) scored = scored.filter(e => (e.tag || e.filename) === effectiveDevice);
+
+    const empty  = document.getElementById("trendsEmpty");
+    const wrap   = document.getElementById("trendsChartWrap");
+
+    if (scored.length < 2) {
+      empty.classList.remove("hidden");
+      wrap.style.display = "none";
+      return;
+    }
+    empty.classList.add("hidden");
+    wrap.style.display = "";
+
+    // Group by device key (tag || filename)
+    const byDevice = {};
+    scored.forEach(e => {
+      const key = e.tag || e.filename;
+      if (!byDevice[key]) byDevice[key] = [];
+      byDevice[key].push(e);
+    });
+
+    const allTimestamps = [...new Set(scored.map(e => e.timestamp))].sort();
+    const labels = allTimestamps.map(ts => {
+      const d = new Date(ts);
+      return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    });
+
+    const devices = Object.keys(byDevice);
+    const datasets = devices.map((dev, i) => {
+      const color = CHART_COLORS[i % CHART_COLORS.length];
+      const points = allTimestamps.map(ts => {
+        const entry = byDevice[dev].find(e => e.timestamp === ts);
+        return entry ? entry.score : null;
+      });
+      return {
+        label: dev,
+        data: points,
+        borderColor: color,
+        backgroundColor: color + "22",
+        pointBackgroundColor: color,
+        tension: 0.3,
+        spanGaps: true,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+      };
+    });
+
+    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    const gridColor  = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+    const tickColor  = isDark ? "#9999BB" : "#6B6B8A";
+
+    if (trendsChartInstance) trendsChartInstance.destroy();
+    trendsChartInstance = new Chart(document.getElementById("trendsChart"), {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { labels: { color: tickColor, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y + "/100" : "—"}`
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: tickColor, maxRotation: 30, font: { size: 10 } }, grid: { color: gridColor } },
+          y: {
+            min: 0, max: 100,
+            ticks: { color: tickColor, callback: v => v + "/100", font: { size: 10 } },
+            grid: { color: gridColor },
+          }
+        }
+      }
+    });
+  }
+
+  document.getElementById("refreshTrendsBtn").addEventListener("click", loadTrends);
+  document.getElementById("trendsVendorFilter").addEventListener("change", () => {
+    // Reset device filter when vendor changes, then re-render
+    document.getElementById("trendsDeviceFilter").value = "";
+    renderTrends(trendsData);
+  });
+  document.getElementById("trendsDeviceFilter").addEventListener("change", () => renderTrends(trendsData));
+
   document.getElementById("auditForm").addEventListener("submit", async function (e) {
     e.preventDefault();
     setLoading("submitBtn", "submitText", "submitSpinner", "Running\u2026", true);
@@ -473,7 +636,6 @@
 
   function renderResults(data) {
     document.getElementById("resultsSection").classList.remove("hidden");
-    document.getElementById("resultsSection").scrollIntoView({ behavior: "smooth" });
 
     const tag = document.getElementById("detectedVendorTag");
     if (data.detected_vendor) {
@@ -488,8 +650,9 @@
     activeFilter = null; applyFindingFilter(null);
     document.getElementById("summaryGrid").innerHTML = buildSummaryHTML(data.summary);
 
-    document.getElementById("findingsList").innerHTML = data.findings.length
-      ? data.findings.map(f => `<div class="finding ${findingClass(f)}">${escHtml(f)}</div>`).join("")
+    const enriched = data.enriched_findings || data.findings.map(f => ({ message: f, category: null, remediation: null }));
+    document.getElementById("findingsList").innerHTML = enriched.length
+      ? enriched.map(f => buildFindingHTML(f)).join("")
       : `<div class="finding finding-pass">[PASS] No issues found</div>`;
 
     const pdfRow = document.getElementById("pdfRow");
@@ -533,7 +696,6 @@
 
   function renderDiff(data) {
     document.getElementById("diffResults").classList.remove("hidden");
-    document.getElementById("diffResults").scrollIntoView({ behavior: "smooth" });
 
     const tag = document.getElementById("diffVendorTag");
     tag.textContent = "Vendor: " + (VENDOR_LABELS[data.vendor] || data.vendor);
@@ -587,15 +749,14 @@
 
   function renderConnectResults(data) {
     document.getElementById("connectResults").classList.remove("hidden");
-    document.getElementById("connectResults").scrollIntoView({ behavior: "smooth" });
     const tag = document.getElementById("connVendorTag");
     tag.textContent = (VENDOR_LABELS[data.detected_vendor] || data.detected_vendor) + " @ " + data.host;
     tag.classList.remove("hidden");
     document.getElementById("connSummaryGrid").innerHTML = buildSummaryHTML(data.summary);
-    document.getElementById("connFindingsList").innerHTML = data.findings.length
-      ? data.findings.map(f => `<div class="finding ${findingClass(f)}">${escHtml(f)}</div>`).join("")
+    const enriched = data.enriched_findings || data.findings.map(f => ({ message: f, category: null, remediation: null }));
+    document.getElementById("connFindingsList").innerHTML = enriched.length
+      ? enriched.map(f => buildFindingHTML(f)).join("")
       : `<div class="finding finding-pass">[PASS] No issues found</div>`;
-    // Only show the archive-saved banner when the audit actually saved
     const connArchiveRow = document.getElementById("connArchiveRow");
     if (data.archive_id) connArchiveRow.classList.remove("hidden");
     else connArchiveRow.classList.add("hidden");
@@ -626,7 +787,7 @@
 
     let entries = historyData.slice();
     if (vendorFilter) entries = entries.filter(e => e.vendor === vendorFilter);
-    if (search)       entries = entries.filter(e => (e.filename || "").toLowerCase().includes(search));
+    if (search)       entries = entries.filter(e => (e.filename || "").toLowerCase().includes(search) || (e.tag || "").toLowerCase().includes(search));
 
     if (sortMode === "newest")  entries.sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
     if (sortMode === "oldest")  entries.sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
@@ -651,14 +812,16 @@
       const ts     = e.timestamp ? new Date(e.timestamp).toLocaleString() : "—";
       const vendor = VENDOR_LABELS[e.vendor] || e.vendor;
       const hi = e.summary?.high || 0, med = e.summary?.medium || 0, tot = e.summary?.total || 0;
+      const primaryName = e.tag ? escHtml(e.tag) + " <span style='font-weight:400;color:var(--text-muted)'>v" + (e.version || 1) + "</span>" : escHtml(e.filename);
+      const secondaryMeta = e.tag ? escHtml(e.filename) + " &bull; " + escHtml(vendor) + " &bull; " + escHtml(ts) : escHtml(vendor) + " &bull; " + escHtml(ts);
       return `<div class="history-entry" data-id="${escHtml(e.id)}">
         <div class="history-entry-left">
           <label class="history-check-wrap" title="Select to compare">
             <input type="checkbox" class="history-check" data-id="${escHtml(e.id)}" />
           </label>
           <div class="history-entry-info">
-            <span class="history-filename">${escHtml(e.filename)}</span>
-            <span class="history-meta">${escHtml(vendor)} &bull; ${escHtml(ts)}</span>
+            <span class="history-filename">${primaryName}</span>
+            <span class="history-meta">${secondaryMeta}</span>
           </div>
         </div>
         <div class="history-entry-right">
@@ -713,6 +876,16 @@
     if (compareSelections.length < 2) return;
     // Always put the older entry as baseline (id_a) regardless of selection order
     const entries = compareSelections.map(id => historyData.find(e => e.id === id)).filter(Boolean);
+
+    // Block cross-vendor comparisons
+    if (entries[0].vendor !== entries[1].vendor) {
+      const section = document.getElementById("compareResults");
+      section.classList.remove("hidden");
+      document.getElementById("compareContent").innerHTML =
+        `<div class="alert alert-error">Cannot compare audits from different vendors. Both entries must be the same vendor.</div>`;
+      return;
+    }
+
     entries.sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
     const id_a = entries[0].id;
     const id_b = entries[1].id;
@@ -732,7 +905,6 @@
   function renderComparison(data) {
     const section = document.getElementById("compareResults");
     section.classList.remove("hidden");
-    section.scrollIntoView({ behavior: "smooth" });
 
     const ea = data.entry_a, eb = data.entry_b, d = data.delta;
     const tsA = ea.timestamp ? new Date(ea.timestamp).toLocaleString() : "—";
@@ -863,19 +1035,49 @@
     if (s.pci_high  || s.pci_medium)  { items.push({ label:"PCI High",   value:s.pci_high,   cls:"sev-compliance",filter:"compliance"}); items.push({ label:"PCI Med",    value:s.pci_medium, cls:"sev-compliance",filter:"compliance"}); }
     if (s.cis_high  || s.cis_medium)  { items.push({ label:"CIS High",   value:s.cis_high,   cls:"sev-compliance",filter:"compliance"}); items.push({ label:"CIS Med",    value:s.cis_medium, cls:"sev-compliance",filter:"compliance"}); }
     if (s.nist_high || s.nist_medium) { items.push({ label:"NIST High",  value:s.nist_high,  cls:"sev-compliance",filter:"compliance"}); items.push({ label:"NIST Med",   value:s.nist_medium,cls:"sev-compliance",filter:"compliance"}); }
-    return items.map(i =>
+    let html = items.map(i =>
       `<div class="summary-box ${i.cls}" data-filter="${i.filter}" title="Click to filter">
          <span class="summary-val">${i.value}</span><span class="summary-lbl">${i.label}</span>
        </div>`
     ).join("");
+    if (s.score !== undefined && s.score !== null) {
+      const scoreCls = s.score >= 80 ? "sev-score-good" : s.score >= 50 ? "sev-score-warn" : "sev-score-bad";
+      html += `<div class="summary-box ${scoreCls}" data-filter="" title="Security score (100 \u2212 HIGH\u00d710 \u2212 MEDIUM\u00d73)">
+        <span class="summary-val">${s.score}</span><span class="summary-lbl">Score /100</span>
+      </div>`;
+    }
+    return html;
   }
 
   function findingClass(f) {
-    if (f.includes("[HIGH]")   && !f.match(/PCI-|CIS-|NIST-/)) return "finding-high";
-    if (f.includes("[MEDIUM]") && !f.match(/PCI-|CIS-|NIST-/)) return "finding-medium";
-    if (f.match(/PCI-HIGH|CIS-HIGH|NIST-HIGH/))                 return "finding-compliance-high";
-    if (f.match(/PCI-MEDIUM|CIS-MEDIUM|NIST-MEDIUM/))           return "finding-compliance-medium";
+    const msg = typeof f === "object" ? f.message : f;
+    if (msg.includes("[HIGH]")   && !msg.match(/PCI-|CIS-|NIST-/)) return "finding-high";
+    if (msg.includes("[MEDIUM]") && !msg.match(/PCI-|CIS-|NIST-/)) return "finding-medium";
+    if (msg.match(/PCI-HIGH|CIS-HIGH|NIST-HIGH/))                   return "finding-compliance-high";
+    if (msg.match(/PCI-MEDIUM|CIS-MEDIUM|NIST-MEDIUM/))             return "finding-compliance-medium";
     return "finding-info";
+  }
+
+  const CATEGORY_LABELS = {
+    exposure:   { label: "Exposure",    cls: "cat-exposure" },
+    logging:    { label: "Logging",     cls: "cat-logging" },
+    protocol:   { label: "Protocol",    cls: "cat-protocol" },
+    hygiene:    { label: "Hygiene",     cls: "cat-hygiene" },
+    redundancy: { label: "Redundancy",  cls: "cat-redundancy" },
+    compliance: { label: "Compliance",  cls: "cat-compliance" },
+  };
+
+  function buildFindingHTML(f) {
+    const msg        = typeof f === "object" ? f.message      : f;
+    const category   = typeof f === "object" ? f.category     : null;
+    const remediation= typeof f === "object" ? f.remediation  : null;
+    const cls        = findingClass(f);
+    const catInfo    = category ? (CATEGORY_LABELS[category] || { label: category, cls: "cat-hygiene" }) : null;
+    const catBadge   = catInfo ? `<span class="finding-cat-badge ${catInfo.cls}">${catInfo.label}</span>` : "";
+    const remDiv     = remediation
+      ? `<div class="finding-remediation">&#8618; ${escHtml(remediation)}</div>`
+      : "";
+    return `<div class="finding ${cls}">${catBadge}<span class="finding-msg">${escHtml(msg)}</span>${remDiv}</div>`;
   }
 
   function setLoading(btnId, textId, spinnerId, label, loading) {
