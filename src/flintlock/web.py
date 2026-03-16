@@ -146,10 +146,14 @@ def validate_vendor_format(content: str, filename: str, vendor: str) -> tuple[bo
 def _sort_findings(findings: list) -> list:
     def priority(f):
         is_comp = any(x in f for x in ("PCI-", "CIS-", "NIST-"))
-        if "[HIGH]"   in f and not is_comp: return 0
-        if "[MEDIUM]" in f and not is_comp: return 1
-        if "HIGH"     in f and is_comp:     return 2
-        if "MEDIUM"   in f and is_comp:     return 3
+        if "[HIGH]"   in f and not is_comp:
+            return 0
+        if "[MEDIUM]" in f and not is_comp:
+            return 1
+        if "HIGH"     in f and is_comp:
+            return 2
+        if "MEDIUM"   in f and is_comp:
+            return 3
         return 4
     return sorted(findings, key=priority)
 
