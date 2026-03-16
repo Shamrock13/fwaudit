@@ -35,6 +35,7 @@
 - **Score Trends chart** — visualize security score over time per device, with vendor and device tag filters
 - **Archival reviews** — select any two saved audits and compare them: see resolved findings, new issues, and delta scores
 - **Activity Log** — full record of every audit, SSH attempt, and config diff, including failures
+- **PDF report export** — download a color-coded findings report
 - Detect overly permissive any/any rules
 - Detect permit rules missing logging
 - Detect missing deny-all rule
