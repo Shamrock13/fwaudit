@@ -4,3 +4,7 @@ fpdf2>=2.7
 flask>=3.0
 paramiko>=3.0
 apscheduler>=3.10
+defusedxml>=0.7
+# Minimum versions to clear known CVEs in transitive dependencies
+cryptography>=42.0.4
+pyjwt>=2.12.0

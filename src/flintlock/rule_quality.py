@@ -317,7 +317,7 @@ def check_shadow_rules_juniper(policies: list) -> list:
         zone_pairs.setdefault(key, []).append(p)
 
     for (fz, tz), pollist in zone_pairs.items():
-        active = []  # list of (name, src, dst, app, action)
+        active: list = []  # list of (name, src, dst, app, action)
 
         for p in pollist:
             name   = p.get("name", "unnamed")
