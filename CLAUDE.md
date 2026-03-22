@@ -111,4 +111,4 @@ pip install -e .
 pip install -r requirements.txt
 ```
 
-**Note:** `requirements.txt` is missing `defusedxml>=0.7` — use `pyproject.toml` as the source of truth for dependencies.
+Both `requirements.txt` and `pyproject.toml` are the source of truth for dependencies and should be kept in sync. The pre-merge validation Stop hook checks for drift between them.
