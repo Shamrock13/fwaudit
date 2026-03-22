@@ -25,6 +25,8 @@ def _run_scheduled_audit(schedule_id: str):
         run_vendor_audit, run_compliance_checks,
         _sort_findings, _build_summary, _findings_to_strings, _wrap_compliance,
     )
+    from .notify import send_slack, send_teams, send_email
+    from .settings import get_settings
 
     schedule = get_schedule(schedule_id, include_password=True)
     if not schedule or not schedule.get("enabled"):
@@ -42,17 +44,31 @@ def _run_scheduled_audit(schedule_id: str):
     upload_folder = os.environ.get("UPLOAD_FOLDER", "/tmp/flintlock_uploads")
     os.makedirs(upload_folder, exist_ok=True)
 
+    settings = get_settings()
+    _extra_domains = [
+        d.strip()
+        for d in settings.get("webhook_allowlist", "").split(",")
+        if d.strip()
+    ]
+
     # ── SSH pull ──────────────────────────────────────────────────────────────
     temp_path = None
     try:
         temp_path, _ = connect_and_pull(
             vendor, host, port, username, password,
             timeout=30, upload_folder=upload_folder,
+            host_key_policy=settings.get("ssh_host_key_policy", "warn"),
         )
     except Exception as e:
         record_run(schedule_id, "error", str(e))
         log_activity(ACTION_SSH_CONNECT, label, vendor=vendor, success=False,
                      error=str(e), details={"host": host, "scheduled": True})
+        if schedule.get("notify_on_error"):
+            send_slack(schedule.get("notify_slack_webhook", ""), schedule, {}, [],
+                       error=str(e), extra_webhook_domains=_extra_domains)
+            send_teams(schedule.get("notify_teams_webhook", ""), schedule, {}, [],
+                       error=str(e), extra_webhook_domains=_extra_domains)
+            send_email(schedule.get("notify_email", ""), schedule, {}, [], settings, error=str(e))
         return
 
     # ── Audit + compliance ────────────────────────────────────────────────────
@@ -76,10 +92,23 @@ def _run_scheduled_audit(schedule_id: str):
                                "high": summary.get("high", 0)})
         record_run(schedule_id, "ok")
 
+        if schedule.get("notify_on_finding") and summary.get("high", 0) > 0:
+            send_slack(schedule.get("notify_slack_webhook", ""), schedule, summary, findings,
+                       extra_webhook_domains=_extra_domains)
+            send_teams(schedule.get("notify_teams_webhook", ""), schedule, summary, findings,
+                       extra_webhook_domains=_extra_domains)
+            send_email(schedule.get("notify_email", ""), schedule, summary, findings, settings)
+
     except Exception as e:
         record_run(schedule_id, "error", str(e))
         log_activity(ACTION_SSH_CONNECT, label, vendor=vendor, success=False,
                      error=str(e), details={"host": host, "scheduled": True})
+        if schedule.get("notify_on_error"):
+            send_slack(schedule.get("notify_slack_webhook", ""), schedule, {}, [],
+                       error=str(e), extra_webhook_domains=_extra_domains)
+            send_teams(schedule.get("notify_teams_webhook", ""), schedule, {}, [],
+                       error=str(e), extra_webhook_domains=_extra_domains)
+            send_email(schedule.get("notify_email", ""), schedule, {}, [], settings, error=str(e))
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)

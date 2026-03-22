@@ -1,9 +1,10 @@
 import atexit
 import json
+import logging as _logging
 import os
 import re
 import uuid
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file
 
@@ -17,6 +18,7 @@ from .audit_engine import (
 )
 from .diff import diff_configs
 from .archive import save_audit, list_archive, get_entry, delete_entry, compare_entries
+from .export import to_json, to_csv, to_sarif
 from .activity_log import (
     log_activity, list_activity, delete_activity_entry, clear_activity,
     ACTION_FILE_AUDIT, ACTION_SSH_CONNECT, ACTION_CONFIG_DIFF,
@@ -24,12 +26,13 @@ from .activity_log import (
 from .settings import get_settings, save_settings
 from .schedule_store import (
     list_schedules, get_schedule, create_schedule,
-    update_schedule, delete_schedule,
+    update_schedule, delete_schedule, ScheduleValidationError,
 )
 from .scheduler_runner import (
     start_scheduler, stop_scheduler, reload_job,
     run_now as scheduler_run_now, scheduler_available,
 )
+from .syslog_handler import configure_syslog
 
 UPLOAD_FOLDER    = os.environ.get("UPLOAD_FOLDER",    "/tmp/flintlock_uploads")
 REPORTS_FOLDER   = os.environ.get("REPORTS_FOLDER",   "/tmp/flintlock_reports")
@@ -45,14 +48,56 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB upload limit
 
 
+# ── HTTP security headers ─────────────────────────────────────────────────────
+# Applied to every response.  HSTS is intentionally omitted here because
+# Flintlock may run over plain HTTP in local/dev setups; enable it at the
+# reverse-proxy layer when deploying with TLS.
+# CSP is omitted pending a full frontend audit (inline scripts + CDN assets
+# need to be enumerated first) — tracked in the security roadmap Phase 2.
+
+@app.after_request
+def _add_security_headers(response):
+    response.headers.setdefault("X-Frame-Options",        "SAMEORIGIN")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-XSS-Protection",       "1; mode=block")
+    response.headers.setdefault("Referrer-Policy",        "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "geolocation=(), microphone=(), camera=()",
+    )
+    return response
+
+
+# ── Error response helper ─────────────────────────────────────────────────────
+
+_logger = _logging.getLogger(__name__)
+
+
+def _err(exc: Exception, generic_msg: str = "An internal error occurred.") -> str:
+    """Return an error message string respecting the error_detail setting.
+
+    In 'full' mode (development) the raw exception is surfaced.
+    In 'sanitized' mode (production default) only *generic_msg* is returned and
+    the full exception is written to the application log.
+    """
+    _logger.exception("Internal error: %s", exc)
+    if get_settings().get("error_detail") == "full":
+        return str(exc)
+    return generic_msg
+
+
 VENDOR_DISPLAY = {
-    "asa":      "Cisco",
-    "ftd":      "Cisco",
+    "asa":      "Cisco ASA",
+    "ftd":      "Cisco FTD",
     "paloalto": "Palo Alto Networks",
     "fortinet": "Fortinet",
     "pfsense":  "pfSense",
     "aws":      "AWS Security Group",
     "azure":    "Azure NSG",
+    "gcp":      "GCP VPC Firewall",
+    "iptables": "iptables",
+    "juniper":  "Juniper SRX",
+    "nftables": "nftables",
 }
 
 ALL_VENDORS = set(VENDOR_DISPLAY)
@@ -66,7 +111,7 @@ def detect_vendor(content: str, filename: str) -> str | None:
     content_lower  = content.lower()
     stripped       = content.strip()
 
-    # JSON-based: AWS or Azure
+    # JSON-based: AWS, Azure, or GCP
     if stripped.startswith("{") or stripped.startswith("[") or filename_lower.endswith(".json"):
         try:
             data = json.loads(content[:8192])  # partial parse for detection
@@ -79,12 +124,22 @@ def detect_vendor(content: str, filename: str) -> str | None:
                     # Could be az network nsg list output
                     if data["value"] and "securityRules" in data["value"][0]:
                         return "azure"
+                if "items" in data and isinstance(data["items"], list) and data["items"]:
+                    first = data["items"][0]
+                    if "direction" in first and "IPProtocol" not in first and (
+                        "allowed" in first or "denied" in first
+                    ):
+                        return "gcp"
+                if "direction" in data and ("allowed" in data or "denied" in data):
+                    return "gcp"
             elif isinstance(data, list) and data:
                 first = data[0]
                 if "GroupId" in first or "IpPermissions" in first:
                     return "aws"
                 if "securityRules" in first or "defaultSecurityRules" in first:
                     return "azure"
+                if "direction" in first and ("allowed" in first or "denied" in first):
+                    return "gcp"
         except Exception:
             pass
 
@@ -105,6 +160,31 @@ def detect_vendor(content: str, filename: str) -> str | None:
     if any(k in content_lower for k in ("access-control-policy", "firepower threat defense",
                                          "firepower-module", "intrusion-policy")):
         return "ftd"
+
+    # Text-based: Juniper SRX ("set" style or hierarchical brace style)
+    if re.search(r"set security policies from-zone", content) or (
+        "from-zone" in content_lower and "to-zone" in content_lower
+        and ("security {" in content or "security{" in content)
+    ):
+        return "juniper"
+
+    # Text-based: nftables ("nft list ruleset" output)
+    if re.search(r"\btable\s+\w+\s+\w+\s*\{|\bchain\s+\w+\s*\{", content):
+        return "nftables"
+
+    # JSON nftables ("nft -j list ruleset")
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            data = json.loads(content[:8192])
+            nft_entries = data if isinstance(data, list) else data.get("nftables", [])
+            if isinstance(nft_entries, list) and any("chain" in e or "rule" in e for e in nft_entries):
+                return "nftables"
+        except Exception:
+            pass
+
+    # Text-based: iptables-save
+    if re.search(r"^\*\w+$|^-A\s+\w+", content, re.MULTILINE):
+        return "iptables"
 
     # Text-based: Cisco ASA
     if "access-list" in content_lower and any(k in content_lower for k in ("permit", "deny")):
@@ -162,6 +242,55 @@ def validate_vendor_format(content: str, filename: str, vendor: str) -> tuple[bo
     elif vendor == "azure":
         if not is_json:
             return False, "Azure NSG exports are JSON. Please upload a .json file."
+
+    elif vendor == "juniper":
+        if is_xml or is_json:
+            return False, "Juniper SRX configs are text-based, but this file appears to be XML or JSON."
+        if not any(m in content_lower for m in (
+            "set security", "from-zone", "to-zone", "security-zone", "security {"
+        )):
+            return False, "No Juniper SRX security configuration markers found. Check vendor selection."
+
+    elif vendor == "gcp":
+        if not is_json:
+            return False, "GCP VPC firewall exports are JSON. Please upload a .json file."
+        try:
+            parsed = json.loads(content[:8192])
+            items = parsed if isinstance(parsed, list) else parsed.get("items", [parsed])
+            if not items or not isinstance(items[0], dict):
+                raise ValueError("empty")
+            first = items[0]
+            if "direction" not in first or ("allowed" not in first and "denied" not in first):
+                return False, (
+                    "This JSON does not contain GCP VPC firewall rule markers "
+                    "('direction', 'allowed'/'denied'). Check vendor selection."
+                )
+        except Exception:
+            return False, "Could not parse this file as a GCP VPC firewall JSON export."
+
+    elif vendor == "iptables":
+        if is_xml:
+            return False, "iptables-save files are text-based, not XML."
+        if not re.search(r"^\*\w+$|^-A\s+\w+", content, re.MULTILINE):
+            return False, ("No iptables-save markers found (expected '*filter' or '-A INPUT ...'). "
+                           "Export with 'iptables-save > rules.txt'.")
+
+    elif vendor == "nftables":
+        # Accept either nft text or JSON
+        is_nft_text = bool(re.search(r"\btable\s+\w+\s+\w+\s*\{|\bchain\s+\w+\s*\{", content))
+        is_nft_json = False
+        if is_json:
+            try:
+                data = json.loads(content[:8192])
+                nft_entries = data if isinstance(data, list) else data.get("nftables", [])
+                is_nft_json = isinstance(nft_entries, list) and any(
+                    "chain" in e or "rule" in e for e in nft_entries
+                )
+            except Exception:
+                pass
+        if not is_nft_text and not is_nft_json:
+            return False, ("No nftables markers found. "
+                           "Export with 'nft list ruleset' or 'nft -j list ruleset'.")
 
     else:
         return False, f"Unknown vendor: {vendor}"
@@ -233,6 +362,15 @@ def run_audit():
     generate_pdf = request.form.get("report") == "1"
     archive_it   = request.form.get("archive") == "1"
     tag          = request.form.get("tag", "").strip() or None
+
+    # Early vendor allowlist check — reject unknown values before touching disk.
+    if vendor not in ("auto", *ALL_VENDORS):
+        return jsonify({"error": f"Unknown vendor '{vendor}'."}), 400
+
+    # Early compliance allowlist check.
+    from .schedule_store import VALID_FRAMEWORKS
+    if compliance and compliance not in VALID_FRAMEWORKS:
+        return jsonify({"error": f"Unknown compliance framework '{compliance}'."}), 400
 
     upload = request.files["config"]
     suffix = Path(upload.filename).suffix or ".txt"
@@ -320,7 +458,7 @@ def run_audit():
     except Exception as e:
         log_activity(ACTION_FILE_AUDIT, upload.filename, vendor=vendor or "unknown",
                      success=False, error=str(e))
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _err(e, "Audit failed. Check your configuration file and vendor selection.")}), 500
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
@@ -336,6 +474,10 @@ def run_diff():
         return jsonify({"error": "Both config files must be selected"}), 400
 
     vendor = request.form.get("vendor", "auto").strip().lower()
+
+    # Early vendor allowlist check before touching disk.
+    if vendor not in ("auto", *ALL_VENDORS):
+        return jsonify({"error": f"Unknown vendor '{vendor}'."}), 400
 
     upload_a = request.files["config_a"]
     upload_b = request.files["config_b"]
@@ -373,7 +515,7 @@ def run_diff():
         log_activity(ACTION_CONFIG_DIFF,
                      f"{upload_a.filename} → {upload_b.filename}",
                      vendor=vendor or "unknown", success=False, error=str(e))
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _err(e, "Audit failed. Check your configuration file and vendor selection.")}), 500
     finally:
         for p in (path_a, path_b):
             if os.path.exists(p):
@@ -401,9 +543,11 @@ def live_connect():
 
     try:
         from .ssh_connector import connect_and_pull
+        _settings = get_settings()
         temp_path, _ = connect_and_pull(
             vendor, host, port, username, password,
-            timeout=30, upload_folder=UPLOAD_FOLDER
+            timeout=30, upload_folder=UPLOAD_FOLDER,
+            host_key_policy=_settings.get("ssh_host_key_policy", "warn"),
         )
     except Exception as e:
         # Log the failed attempt to activity log only — do NOT save to Audit History
@@ -443,7 +587,7 @@ def live_connect():
     except Exception as e:
         log_activity(ACTION_SSH_CONNECT, label, vendor=vendor, success=False, error=str(e),
                      details={"host": host, "port": port})
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": _err(e, "Audit failed. Check your configuration file and vendor selection.")}), 500
     finally:
         if "temp_path" in dir() and os.path.exists(temp_path):
             os.remove(temp_path)
@@ -483,6 +627,36 @@ def archive_get(entry_id):
 def archive_delete(entry_id):
     deleted = delete_entry(entry_id)
     return jsonify({"deleted": deleted})
+
+
+@app.route("/archive/<entry_id>/export", methods=["GET"])
+def archive_export(entry_id):
+    """Export an archived audit as JSON, CSV, or SARIF.
+
+    Query param: fmt = json | csv | sarif  (default: json)
+    """
+    from flask import Response
+    fmt   = request.args.get("fmt", "json").lower()
+    entry = get_entry(entry_id)
+    if not entry:
+        return jsonify({"error": "Not found"}), 404
+
+    base = (entry.get("filename") or "audit").rsplit(".", 1)[0]
+
+    if fmt == "json":
+        content, mime, ext = to_json(entry), "application/json", "json"
+    elif fmt == "csv":
+        content, mime, ext = to_csv(entry), "text/csv", "csv"
+    elif fmt == "sarif":
+        content, mime, ext = to_sarif(entry), "application/json", "sarif"
+    else:
+        return jsonify({"error": f"Unknown format '{fmt}'. Use json, csv, or sarif."}), 400
+
+    return Response(
+        content,
+        mimetype=mime,
+        headers={"Content-Disposition": f'attachment; filename="{base}_flintlock.{ext}"'},
+    )
 
 
 @app.route("/archive/trends", methods=["GET"])
@@ -559,6 +733,13 @@ def bulk_audit():
     compliance      = request.form.get("compliance", "").strip().lower() or None
     archive_it      = request.form.get("archive") == "1"
     tag_prefix      = request.form.get("tag", "").strip() or None
+
+    # Early allowlist checks before processing any files.
+    if vendor_override not in ("auto", *ALL_VENDORS):
+        return jsonify({"error": f"Unknown vendor '{vendor_override}'."}), 400
+    from .schedule_store import VALID_FRAMEWORKS
+    if compliance and compliance not in VALID_FRAMEWORKS:
+        return jsonify({"error": f"Unknown compliance framework '{compliance}'."}), 400
 
     results = []
 
@@ -655,7 +836,10 @@ def schedules_create():
     data = request.get_json(silent=True) or {}
     if not data.get("host") or not data.get("username"):
         return jsonify({"error": "host and username are required"}), 400
-    schedule = create_schedule(data)
+    try:
+        schedule = create_schedule(data)
+    except ScheduleValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
     reload_job(schedule["id"], get_schedule(schedule["id"], include_password=True))
     return jsonify(schedule), 201
 
@@ -671,7 +855,10 @@ def schedules_get(schedule_id):
 @app.route("/schedules/<schedule_id>", methods=["PUT"])
 def schedules_update(schedule_id):
     data = request.get_json(silent=True) or {}
-    schedule = update_schedule(schedule_id, data)
+    try:
+        schedule = update_schedule(schedule_id, data)
+    except ScheduleValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
     if not schedule:
         return jsonify({"error": "Not found"}), 404
     reload_job(schedule_id, get_schedule(schedule_id, include_password=True))
@@ -769,7 +956,62 @@ def settings_get():
 def settings_save():
     data = request.get_json(silent=True) or {}
     saved = save_settings(data)
+    # Reconfigure syslog immediately when settings are changed.
+    configure_syslog(saved)
     return jsonify(saved)
+
+
+@app.route("/settings/test-smtp", methods=["POST"])
+def settings_test_smtp():
+    """Attempt a live SMTP connection and send a test email.
+
+    Accepts the same SMTP fields as /settings POST so the user can test
+    before saving.  Returns {ok: bool, message: str}.
+    """
+    import smtplib
+    import ssl
+    from email.mime.text import MIMEText
+
+    data          = request.get_json(silent=True) or {}
+    smtp_host     = (data.get("smtp_host") or "").strip()
+    smtp_port     = int(data.get("smtp_port") or 587)
+    smtp_user     = (data.get("smtp_user") or "").strip()
+    smtp_password = data.get("smtp_password") or ""
+    smtp_from     = (data.get("smtp_from") or smtp_user or "").strip()
+    smtp_tls      = bool(data.get("smtp_tls", True))
+    to_address    = (data.get("to_address") or smtp_from or smtp_user or "").strip()
+
+    if not smtp_host:
+        return jsonify({"ok": False, "message": "SMTP host is required."}), 400
+    if not to_address:
+        return jsonify({"ok": False, "message": "Could not determine a recipient address — set smtp_from or smtp_user."}), 400
+
+    msg = MIMEText(
+        "This is a test message from Flintlock.\n\n"
+        "If you received this, your SMTP settings are configured correctly.",
+        "plain", "utf-8",
+    )
+    msg["Subject"] = "[Flintlock] SMTP test"
+    msg["From"]    = smtp_from or to_address
+    msg["To"]      = to_address
+
+    try:
+        context = ssl.create_default_context()
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            if smtp_tls:
+                server.starttls(context=context)
+            if smtp_user:
+                server.login(smtp_user, smtp_password)
+            server.sendmail(smtp_from or to_address, [to_address], msg.as_string())
+        return jsonify({"ok": True, "message": f"Test email sent successfully to {to_address}."})
+    except smtplib.SMTPAuthenticationError:
+        return jsonify({"ok": False, "message": "Authentication failed — check username and password."})
+    except smtplib.SMTPConnectError as exc:
+        return jsonify({"ok": False, "message": f"Could not connect to {smtp_host}:{smtp_port} — {exc}"})
+    except smtplib.SMTPException as exc:
+        return jsonify({"ok": False, "message": f"SMTP error: {exc}"})
+    except OSError as exc:
+        return jsonify({"ok": False, "message": f"Connection error: {exc}"})
 
 
 def main():
@@ -782,6 +1024,7 @@ def main():
 # guard that prevents double-start if this module is reloaded.
 start_scheduler()
 atexit.register(stop_scheduler)
+configure_syslog(get_settings())
 
 
 if __name__ == "__main__":

@@ -30,14 +30,18 @@ def _wrap_compliance(s):
 def _sort_findings(findings: list) -> list:
     def priority(f):
         msg = _finding_msg(f)
-        is_comp = any(x in msg for x in ("PCI-", "CIS-", "NIST-", "HIPAA-"))
-        if "[HIGH]"   in msg and not is_comp:
+        is_comp = any(x in msg for x in ("PCI-", "CIS-", "NIST-", "HIPAA-", "SOC2-", "STIG-"))
+        if "[HIGH]"      in msg and not is_comp:
             return 0
-        if "[MEDIUM]" in msg and not is_comp:
+        if "[MEDIUM]"    in msg and not is_comp:
             return 1
-        if "HIGH"     in msg and is_comp:
+        if "STIG-CAT-I"  in msg:
             return 2
-        if "MEDIUM"   in msg and is_comp:
+        if "HIGH"        in msg and is_comp:
+            return 2
+        if "STIG-CAT-II" in msg:
+            return 3
+        if "MEDIUM"      in msg and is_comp:
             return 3
         return 4
     return sorted(findings, key=priority)
@@ -46,8 +50,9 @@ def _sort_findings(findings: list) -> list:
 def _build_summary(findings):
     def _count(tag):
         return len([f for f in findings if tag in _finding_msg(f)])
-    high   = [f for f in findings if "[HIGH]"   in _finding_msg(f) and not any(x in _finding_msg(f) for x in ["PCI-", "CIS-", "NIST-", "HIPAA-"])]
-    medium = [f for f in findings if "[MEDIUM]" in _finding_msg(f) and not any(x in _finding_msg(f) for x in ["PCI-", "CIS-", "NIST-", "HIPAA-"])]
+    _comp_tags = ["PCI-", "CIS-", "NIST-", "HIPAA-", "SOC2-", "STIG-"]
+    high   = [f for f in findings if "[HIGH]"   in _finding_msg(f) and not any(x in _finding_msg(f) for x in _comp_tags)]
+    medium = [f for f in findings if "[MEDIUM]" in _finding_msg(f) and not any(x in _finding_msg(f) for x in _comp_tags)]
     score  = max(0, 100 - len(high) * 10 - len(medium) * 3)
     return {
         "high":          len(high),
@@ -60,6 +65,11 @@ def _build_summary(findings):
         "nist_medium":   _count("NIST-MEDIUM"),
         "hipaa_high":    _count("HIPAA-HIGH"),
         "hipaa_medium":  _count("HIPAA-MEDIUM"),
+        "soc2_high":     _count("SOC2-HIGH"),
+        "soc2_medium":   _count("SOC2-MEDIUM"),
+        "stig_cat_i":    _count("STIG-CAT-I]"),
+        "stig_cat_ii":   _count("STIG-CAT-II]"),
+        "stig_cat_iii":  _count("STIG-CAT-III]"),
         "total":         len(findings),
         "score":         score,
     }
@@ -155,34 +165,65 @@ def run_vendor_audit(vendor: str, temp_path: str):
     Returns (findings, parse_obj_or_None, extra_data_or_None).
     parse_obj is set for ASA/FTD (CiscoConfParse).
     extra_data is set for Fortinet/pfSense (list of policy dicts).
+
+    Rule quality checks (shadow detection) are appended to findings automatically
+    for all vendors that support ordered rule evaluation.
     """
     from .ftd import audit_ftd
     from .paloalto import audit_paloalto
     from .fortinet import audit_fortinet
+    from .iptables import audit_iptables, audit_nftables
     from .pfsense import audit_pfsense
     from .aws import audit_aws_sg
     from .azure import audit_azure_nsg
+    from .juniper import audit_juniper
+    from .gcp import audit_gcp_firewall
+    from .rule_quality import run_rule_quality_checks
 
     if vendor == "ftd":
         findings, parse = audit_ftd(temp_path)
+        findings += run_rule_quality_checks(vendor, parse, None)
         return findings, parse, None
     if vendor == "asa":
         findings, parse = _audit_asa(temp_path)
+        findings += run_rule_quality_checks(vendor, parse, None)
         return findings, parse, None
     if vendor == "paloalto":
         findings, rules = audit_paloalto(temp_path)
+        findings += run_rule_quality_checks(vendor, None, rules)
         return findings, None, rules  # rules returned as extra_data for compliance reuse
     if vendor == "fortinet":
         findings, extra_data = audit_fortinet(temp_path)
+        findings += run_rule_quality_checks(vendor, None, extra_data)
         return findings, None, extra_data
     if vendor == "pfsense":
         findings, extra_data = audit_pfsense(temp_path)
+        findings += run_rule_quality_checks(vendor, None, extra_data)
         return findings, None, extra_data
     if vendor == "aws":
+        # AWS SG rules have no evaluation order (most-permissive wins);
+        # shadow detection does not apply.
         findings, extra_data = audit_aws_sg(temp_path)
         return findings, None, extra_data
     if vendor == "azure":
         findings, extra_data = audit_azure_nsg(temp_path)
+        findings += run_rule_quality_checks(vendor, None, extra_data)
+        return findings, None, extra_data
+    if vendor == "juniper":
+        findings, policies = audit_juniper(temp_path)
+        findings += run_rule_quality_checks(vendor, None, policies)
+        return findings, None, policies
+    if vendor == "gcp":
+        # GCP firewall rules have no strict evaluation order per-rule (priority-based);
+        # shadow detection is not applied (similar to AWS SGs).
+        findings, extra_data = audit_gcp_firewall(temp_path)
+        return findings, None, extra_data
+    if vendor == "iptables":
+        # iptables rules are ordered; shadow detection not yet implemented for host firewalls.
+        findings, extra_data = audit_iptables(temp_path)
+        return findings, None, extra_data
+    if vendor == "nftables":
+        findings, extra_data = audit_nftables(temp_path)
         return findings, None, extra_data
     raise ValueError(f"Unknown vendor: {vendor}")
 
@@ -195,58 +236,90 @@ def run_compliance_checks(vendor: str, compliance: str, parse, extra_data, temp_
     """
     from .compliance import (
         check_cis_compliance, check_pci_compliance, check_nist_compliance,
-        check_hipaa_compliance,
+        check_hipaa_compliance, check_soc2_compliance, check_stig_compliance,
         check_cis_compliance_ftd, check_pci_compliance_ftd, check_nist_compliance_ftd,
-        check_hipaa_compliance_ftd,
+        check_hipaa_compliance_ftd, check_soc2_compliance_ftd, check_stig_compliance_ftd,
         check_cis_compliance_pa, check_pci_compliance_pa, check_nist_compliance_pa,
-        check_hipaa_compliance_pa,
+        check_hipaa_compliance_pa, check_soc2_compliance_pa, check_stig_compliance_pa,
         check_cis_compliance_forti, check_pci_compliance_forti, check_nist_compliance_forti,
-        check_hipaa_compliance_forti,
+        check_hipaa_compliance_forti, check_soc2_compliance_forti, check_stig_compliance_forti,
         check_cis_compliance_pf, check_pci_compliance_pf, check_nist_compliance_pf,
-        check_hipaa_compliance_pf,
+        check_hipaa_compliance_pf, check_soc2_compliance_pf, check_stig_compliance_pf,
+        check_cis_compliance_juniper, check_pci_compliance_juniper,
+        check_nist_compliance_juniper, check_hipaa_compliance_juniper,
+        check_soc2_compliance_juniper, check_stig_compliance_juniper,
     )
 
-    if vendor in ("aws", "azure"):
+    if vendor in ("aws", "azure", "gcp", "iptables", "nftables"):
         return []
 
     fn_map: dict = {}
+    juniper_data = None
+    if vendor == "juniper":
+        # Compliance checks need both raw content and parsed policies;
+        # extra_data from run_vendor_audit is the policies list.
+        try:
+            with open(temp_path) as _fh:
+                _content = _fh.read()
+        except OSError:
+            _content = ""
+        juniper_data = {"content": _content, "policies": extra_data or []}
 
     if vendor == "asa":
         fn_map = {
             "cis":   (check_cis_compliance,   parse),
-            "pci":   (check_pci_compliance,   parse),
-            "nist":  (check_nist_compliance,  parse),
             "hipaa": (check_hipaa_compliance, parse),
+            "nist":  (check_nist_compliance,  parse),
+            "pci":   (check_pci_compliance,   parse),
+            "soc2":  (check_soc2_compliance,  parse),
+            "stig":  (check_stig_compliance,  parse),
         }
     elif vendor == "ftd":
         fn_map = {
             "cis":   (check_cis_compliance_ftd,   parse),
-            "pci":   (check_pci_compliance_ftd,   parse),
-            "nist":  (check_nist_compliance_ftd,  parse),
             "hipaa": (check_hipaa_compliance_ftd, parse),
+            "nist":  (check_nist_compliance_ftd,  parse),
+            "pci":   (check_pci_compliance_ftd,   parse),
+            "soc2":  (check_soc2_compliance_ftd,  parse),
+            "stig":  (check_stig_compliance_ftd,  parse),
         }
     elif vendor == "paloalto":
         # extra_data is the rules list already parsed by run_vendor_audit — no re-parse needed
         rules = extra_data or []
         fn_map = {
             "cis":   (check_cis_compliance_pa,   rules),
-            "pci":   (check_pci_compliance_pa,   rules),
-            "nist":  (check_nist_compliance_pa,  rules),
             "hipaa": (check_hipaa_compliance_pa, rules),
+            "nist":  (check_nist_compliance_pa,  rules),
+            "pci":   (check_pci_compliance_pa,   rules),
+            "soc2":  (check_soc2_compliance_pa,  rules),
+            "stig":  (check_stig_compliance_pa,  rules),
         }
     elif vendor == "fortinet":
         fn_map = {
             "cis":   (check_cis_compliance_forti,   extra_data),
-            "pci":   (check_pci_compliance_forti,   extra_data),
-            "nist":  (check_nist_compliance_forti,  extra_data),
             "hipaa": (check_hipaa_compliance_forti, extra_data),
+            "nist":  (check_nist_compliance_forti,  extra_data),
+            "pci":   (check_pci_compliance_forti,   extra_data),
+            "soc2":  (check_soc2_compliance_forti,  extra_data),
+            "stig":  (check_stig_compliance_forti,  extra_data),
         }
     elif vendor == "pfsense":
         fn_map = {
             "cis":   (check_cis_compliance_pf,   extra_data),
-            "pci":   (check_pci_compliance_pf,   extra_data),
-            "nist":  (check_nist_compliance_pf,  extra_data),
             "hipaa": (check_hipaa_compliance_pf, extra_data),
+            "nist":  (check_nist_compliance_pf,  extra_data),
+            "pci":   (check_pci_compliance_pf,   extra_data),
+            "soc2":  (check_soc2_compliance_pf,  extra_data),
+            "stig":  (check_stig_compliance_pf,  extra_data),
+        }
+    elif vendor == "juniper":
+        fn_map = {
+            "cis":   (check_cis_compliance_juniper,   juniper_data),
+            "hipaa": (check_hipaa_compliance_juniper, juniper_data),
+            "nist":  (check_nist_compliance_juniper,  juniper_data),
+            "pci":   (check_pci_compliance_juniper,   juniper_data),
+            "soc2":  (check_soc2_compliance_juniper,  juniper_data),
+            "stig":  (check_stig_compliance_juniper,  juniper_data),
         }
 
     entry = fn_map.get(compliance)
