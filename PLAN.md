@@ -10,8 +10,8 @@ These map 1-to-1 with the `[ ]` items in README.md and will be checked off there
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 1 | API key authentication with session management | **Next** | Web UI login + API key for CLI/programmatic access |
-| 2 | Fernet encryption for stored credentials | Pending | SSH passwords, SMTP password in schedule_store |
+| 1 | API key authentication with session management | **Done** | Web UI login + API key for CLI/programmatic access |
+| 2 | Fernet encryption for stored credentials | **Next** | SSH passwords, SMTP password in schedule_store |
 | 3 | CSRF protection (Flask-WTF) | Pending | All state-changing POST routes |
 | 4 | Multi-factor SSH authentication (key-based) | Pending | PEM/passphrase support in ssh_connector.py |
 | 5 | REST API for CI/CD pipeline integration | Pending | JSON API wrapping existing audit_engine |

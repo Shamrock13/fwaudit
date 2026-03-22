@@ -392,7 +392,7 @@ Report saved to: report.pdf
 - [x] Syslog forwarding for SIEM integration
 - [x] Web UI with file upload and inline results
 - [x] XXE injection protection (defusedxml)
-- [ ] API key authentication with session management
+- [x] API key authentication with session management
 - [ ] Fernet encryption for stored credentials
 - [ ] CSRF protection (Flask-WTF)
 - [ ] Multi-factor SSH authentication (key-based)
