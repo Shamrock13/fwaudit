@@ -42,9 +42,34 @@ def _read_until_idle(channel, timeout=RECV_TIMEOUT, idle_secs=1.5):
     return output.decode("utf-8", errors="ignore")
 
 
-def _make_client(host, port, username, password, timeout):
+def _make_client(host, port, username, password, timeout,
+                  host_key_policy: str = "warn"):
+    """Create and connect a Paramiko SSH client.
+
+    *host_key_policy* controls how unknown host keys are handled:
+      ``"strict"``   — RejectPolicy: refuse connections to hosts not in
+                       known_hosts.  Most secure; requires pre-population of
+                       ~/.ssh/known_hosts or the system known_hosts file.
+      ``"warn"``     — WarningPolicy: log a warning and continue.  Balances
+                       usability with visibility (default, replaces old insecure
+                       AutoAddPolicy).
+      ``"auto_add"`` — AutoAddPolicy: silently accept any host key.  Insecure
+                       (MITM-vulnerable); available only for isolated lab use.
+    """
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # Load system + user known_hosts so strict/warn modes work with pre-approved keys.
+    client.load_system_host_keys()
+    try:
+        client.load_host_keys(os.path.expanduser("~/.ssh/known_hosts"))
+    except FileNotFoundError:
+        pass
+    _policy_map = {
+        "strict":   paramiko.RejectPolicy,
+        "warn":     paramiko.WarningPolicy,
+        "auto_add": paramiko.AutoAddPolicy,
+    }
+    policy_cls = _policy_map.get(host_key_policy, paramiko.WarningPolicy)
+    client.set_missing_host_key_policy(policy_cls())
     client.connect(
         host, port=port, username=username, password=password,
         timeout=timeout, look_for_keys=False, allow_agent=False,
@@ -54,9 +79,9 @@ def _make_client(host, port, username, password, timeout):
 
 # ── Cisco ASA ─────────────────────────────────────────────────────────────────
 
-def _pull_asa(host, port, username, password, timeout):
+def _pull_asa(host, port, username, password, timeout, host_key_policy="warn"):
     _require_paramiko()
-    client = _make_client(host, port, username, password, timeout)
+    client = _make_client(host, port, username, password, timeout, host_key_policy)
     try:
         ch = client.invoke_shell()
         time.sleep(1)
@@ -72,9 +97,9 @@ def _pull_asa(host, port, username, password, timeout):
 
 # ── Fortinet ──────────────────────────────────────────────────────────────────
 
-def _pull_fortinet(host, port, username, password, timeout):
+def _pull_fortinet(host, port, username, password, timeout, host_key_policy="warn"):
     _require_paramiko()
-    client = _make_client(host, port, username, password, timeout)
+    client = _make_client(host, port, username, password, timeout, host_key_policy)
     try:
         ch = client.invoke_shell()
         time.sleep(1)
@@ -90,10 +115,10 @@ def _pull_fortinet(host, port, username, password, timeout):
 
 # ── Palo Alto Networks ────────────────────────────────────────────────────────
 
-def _pull_paloalto(host, port, username, password, timeout):
+def _pull_paloalto(host, port, username, password, timeout, host_key_policy="warn"):
     """Pull running config via PA CLI SSH command."""
     _require_paramiko()
-    client = _make_client(host, port, username, password, timeout)
+    client = _make_client(host, port, username, password, timeout, host_key_policy)
     try:
         stdin, stdout, stderr = client.exec_command(
             "show config running", timeout=timeout
@@ -109,9 +134,9 @@ def _pull_paloalto(host, port, username, password, timeout):
 # ── Cisco FTD ─────────────────────────────────────────────────────────────────
 # FTD LINA CLI accepts the same commands as ASA for pulling the running config.
 
-def _pull_ftd(host, port, username, password, timeout):
+def _pull_ftd(host, port, username, password, timeout, host_key_policy="warn"):
     """Pull FTD running config via LINA CLI (same as ASA)."""
-    return _pull_asa(host, port, username, password, timeout)
+    return _pull_asa(host, port, username, password, timeout, host_key_policy)
 
 
 # ── Main entrypoint ───────────────────────────────────────────────────────────
@@ -125,7 +150,8 @@ _PULLERS  = {
 }
 
 
-def connect_and_pull(vendor, host, port, username, password, timeout=30, upload_folder=None):
+def connect_and_pull(vendor, host, port, username, password, timeout=30,
+                     upload_folder=None, host_key_policy: str = "warn"):
     """
     Connect to a live device, pull its running config, and save to a temp file.
 
@@ -136,7 +162,7 @@ def connect_and_pull(vendor, host, port, username, password, timeout=30, upload_
     if puller is None:
         raise ValueError(f"Live SSH not supported for vendor: {vendor}")
 
-    content = puller(host, int(port), username, password, int(timeout))
+    content = puller(host, int(port), username, password, int(timeout), host_key_policy)
 
     if not content or len(content.strip()) < 50:
         raise RuntimeError(

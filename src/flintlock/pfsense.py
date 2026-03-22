@@ -1,4 +1,6 @@
-import xml.etree.ElementTree as ET
+# defusedxml prevents XXE (XML External Entity) injection attacks when parsing
+# user-supplied firewall configs.  Drop-in replacement for ElementTree.
+from defusedxml import ElementTree as ET
 
 
 def _f(severity, category, message, remediation=""):
