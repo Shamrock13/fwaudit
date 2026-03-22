@@ -1,12 +1,19 @@
 import atexit
+import hashlib
+import hmac
 import json
 import logging as _logging
 import os
 import re
+import secrets
 import uuid
+from datetime import timedelta
 from defusedxml import ElementTree as ET
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import (
+    Flask, render_template, request, jsonify, send_file,
+    session, redirect, url_for,
+)
 
 from .license import check_license, activate_license, deactivate_license
 from .ftd import is_ftd_config
@@ -46,6 +53,9 @@ for _d in (UPLOAD_FOLDER, REPORTS_FOLDER, ARCHIVE_FOLDER, ACTIVITY_FOLDER):
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB upload limit
+# FWAUDIT_SECRET should be set in production; fall back to a random key that
+# resets on restart (sessions will be invalidated on each server restart).
+app.secret_key = os.environ.get("FWAUDIT_SECRET") or secrets.token_hex(32)
 
 
 # ── HTTP security headers ─────────────────────────────────────────────────────
@@ -84,6 +94,80 @@ def _err(exc: Exception, generic_msg: str = "An internal error occurred.") -> st
     if get_settings().get("error_detail") == "full":
         return str(exc)
     return generic_msg
+
+
+# ── API key auth helpers ───────────────────────────────────────────────────────
+
+_PBKDF2_ITERATIONS = 260_000
+
+
+def _hash_api_key(raw_key: str) -> str:
+    """Return a PBKDF2-SHA256 hex digest of *raw_key* with a random salt.
+
+    Format: ``<hex-salt>$<hex-digest>``  (both 32 bytes = 64 hex chars each).
+    """
+    salt = secrets.token_bytes(32)
+    digest = hashlib.pbkdf2_hmac("sha256", raw_key.encode(), salt, _PBKDF2_ITERATIONS)
+    return salt.hex() + "$" + digest.hex()
+
+
+def _verify_api_key(raw_key: str, stored_hash: str) -> bool:
+    """Return True if *raw_key* matches *stored_hash* produced by _hash_api_key."""
+    if not stored_hash or "$" not in stored_hash:
+        return False
+    try:
+        salt_hex, digest_hex = stored_hash.split("$", 1)
+        salt   = bytes.fromhex(salt_hex)
+        expected = bytes.fromhex(digest_hex)
+    except ValueError:
+        return False
+    candidate = hashlib.pbkdf2_hmac("sha256", raw_key.encode(), salt, _PBKDF2_ITERATIONS)
+    return hmac.compare_digest(candidate, expected)
+
+
+# ── Before-request auth guard ─────────────────────────────────────────────────
+
+# Endpoints that must always be accessible — even when auth is enabled.
+_AUTH_EXEMPT = {"/login", "/logout", "/static"}
+
+
+@app.before_request
+def _require_auth():
+    """Enforce authentication when auth_enabled is True.
+
+    Browser requests are redirected to /login.
+    Requests that send ``Accept: application/json`` or an X-API-Key header
+    receive a 401 JSON response instead of a redirect.
+    """
+    cfg = get_settings()
+    if not cfg.get("auth_enabled"):
+        return  # auth is opt-in; nothing to do
+
+    # Always allow the login/logout pages and static assets.
+    if request.path == "/login" or request.path == "/logout":
+        return
+    if request.path.startswith("/static"):
+        return
+
+    # Check browser session cookie.
+    if session.get("authenticated"):
+        # Slide the expiry on each request so active users don't get logged out.
+        session.modified = True
+        return
+
+    # Check X-API-Key header for programmatic / CLI callers.
+    api_key = request.headers.get("X-API-Key", "")
+    if api_key and _verify_api_key(api_key, cfg.get("api_key_hash", "")):
+        return
+
+    # Not authenticated — return 401 for API calls, redirect for browsers.
+    wants_json = (
+        "application/json" in request.accept_mimetypes.values()
+        or request.headers.get("X-API-Key") is not None
+    )
+    if wants_json:
+        return jsonify({"error": "Authentication required"}), 401
+    return redirect(url_for("login"))
 
 
 VENDOR_DISPLAY = {
@@ -1012,6 +1096,64 @@ def settings_test_smtp():
         return jsonify({"ok": False, "message": f"SMTP error: {exc}"})
     except OSError as exc:
         return jsonify({"ok": False, "message": f"Connection error: {exc}"})
+
+
+# ── Auth routes ───────────────────────────────────────────────────────────────
+
+@app.before_request
+def _set_session_lifetime():
+    """Apply the configured session lifetime before every request."""
+    cfg = get_settings()
+    minutes = cfg.get("session_lifetime_minutes", 60)
+    app.permanent_session_lifetime = timedelta(minutes=minutes)
+    session.permanent = True
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    cfg = get_settings()
+    if not cfg.get("auth_enabled"):
+        return redirect(url_for("index"))
+
+    error = None
+    if request.method == "POST":
+        key = request.form.get("api_key", "").strip()
+        if _verify_api_key(key, cfg.get("api_key_hash", "")):
+            session["authenticated"] = True
+            next_url = request.args.get("next") or url_for("index")
+            return redirect(next_url)
+        error = "Invalid API key."
+
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/settings/generate-api-key", methods=["POST"])
+def settings_generate_api_key():
+    """Generate a new API key, store its hash, return the raw key once."""
+    raw_key = secrets.token_urlsafe(32)
+    hashed  = _hash_api_key(raw_key)
+
+    # Write the hash directly into the persisted settings file.
+    cfg = get_settings()
+    cfg["api_key_hash"] = hashed
+    save_settings(cfg)
+
+    return jsonify({"api_key": raw_key})
+
+
+@app.route("/settings/revoke-api-key", methods=["POST"])
+def settings_revoke_api_key():
+    """Clear the stored API key hash, effectively revoking access."""
+    cfg = get_settings()
+    cfg["api_key_hash"] = ""
+    save_settings(cfg)
+    return jsonify({"ok": True})
 
 
 def main():

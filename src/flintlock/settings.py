@@ -41,6 +41,15 @@ DEFAULTS: dict = {
     "auto_archive":       False,
     "default_compliance": "",
 
+    # ── Authentication ────────────────────────────────────────────────────────
+    # auth_enabled: when True, all routes require a valid session or X-API-Key.
+    # api_key_hash: PBKDF2-SHA256 hash of the admin API key (never stored raw).
+    #               Empty string means no key has been generated yet.
+    # session_lifetime_minutes: how long a browser session cookie remains valid.
+    "auth_enabled":             False,
+    "api_key_hash":             "",
+    "session_lifetime_minutes": 60,
+
     # ── SMTP (scheduled-audit email alerts) ───────────────────────────────────
     "smtp_host":     "",
     "smtp_port":     587,
@@ -95,6 +104,17 @@ def save_settings(data: dict) -> dict:
     for k, default in DEFAULTS.items():
         merged[k] = data.get(k, default)
 
+    # Preserve api_key_hash from the stored file when the caller doesn't supply
+    # it (the settings form never sends the hash back — only the generate/revoke
+    # API key routes write it directly).
+    if "api_key_hash" not in data:
+        try:
+            with open(SETTINGS_FILE) as _f:
+                _stored = json.load(_f)
+            merged["api_key_hash"] = _stored.get("api_key_hash", "")
+        except (FileNotFoundError, json.JSONDecodeError):
+            merged["api_key_hash"] = ""
+
     # Validate enumerated fields before persisting.
     if merged["ssh_host_key_policy"] not in VALID_SSH_KEY_POLICIES:
         merged["ssh_host_key_policy"] = "warn"
@@ -110,6 +130,12 @@ def save_settings(data: dict) -> dict:
             merged["syslog_port"] = 514
     except (TypeError, ValueError):
         merged["syslog_port"] = 514
+    try:
+        merged["session_lifetime_minutes"] = int(merged["session_lifetime_minutes"])
+        if merged["session_lifetime_minutes"] < 1:
+            merged["session_lifetime_minutes"] = 60
+    except (TypeError, ValueError):
+        merged["session_lifetime_minutes"] = 60
 
     os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
     with open(SETTINGS_FILE, "w") as f:

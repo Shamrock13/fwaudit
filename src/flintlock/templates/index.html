@@ -822,6 +822,44 @@
                 </select>
               </label>
             </div>
+
+            <div class="settings-group">
+              <h3 class="settings-group-title">Access Control</h3>
+              <label class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-row-label">Enable Authentication</span>
+                  <span class="settings-row-desc">When enabled, all pages require a valid session or <code>X-API-Key</code> header. Generate an API key below before enabling, or you will be locked out.</span>
+                </div>
+                <input type="checkbox" id="setting-auth-enabled" />
+              </label>
+              <label class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-row-label">Session Lifetime (minutes)</span>
+                  <span class="settings-row-desc">How long a browser session remains valid without activity. Default: 60 minutes.</span>
+                </div>
+                <input type="number" id="setting-session-lifetime" min="1" max="10080"
+                       style="width:100px" class="settings-select" />
+              </label>
+              <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:0.75rem">
+                <div class="settings-row-info">
+                  <span class="settings-row-label">API Key</span>
+                  <span class="settings-row-desc">A single admin API key is used for both the web login and the <code>X-API-Key</code> header. The raw key is shown once on generation and never stored in plaintext.</span>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+                  <button id="generateApiKeyBtn" class="btn btn-sm btn-secondary">Generate new key</button>
+                  <button id="revokeApiKeyBtn" class="btn btn-sm btn-danger">Revoke key</button>
+                  <span id="apiKeyStatus" style="font-size:0.8125rem;color:#94a3b8"></span>
+                </div>
+                <div id="apiKeyDisplay" style="display:none;width:100%;max-width:520px">
+                  <p style="font-size:0.8rem;color:#f97316;margin-bottom:0.4rem">Copy this key now — it will not be shown again.</p>
+                  <div style="display:flex;gap:0.5rem;align-items:center">
+                    <input type="text" id="apiKeyValue" readonly
+                           style="flex:1;font-family:monospace;font-size:0.8125rem;background:#0f172a;border:1px solid #334155;border-radius:5px;padding:0.4rem 0.6rem;color:#f1f5f9" />
+                    <button id="copyApiKeyBtn" class="btn btn-sm btn-secondary">Copy</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Syslog pane -->
@@ -2022,6 +2060,10 @@
     document.getElementById("setting-ssh-host-key-policy").value     = appSettings.ssh_host_key_policy || "warn";
     document.getElementById("setting-error-detail").value            = appSettings.error_detail         || "sanitized";
     document.getElementById("setting-webhook-allowlist").value       = appSettings.webhook_allowlist    || "";
+    // Access control settings
+    document.getElementById("setting-auth-enabled").checked          = !!appSettings.auth_enabled;
+    document.getElementById("setting-session-lifetime").value        = appSettings.session_lifetime_minutes || 60;
+    document.getElementById("apiKeyStatus").textContent              = appSettings.api_key_hash ? "Key is set." : "No key configured.";
     // Syslog settings
     document.getElementById("setting-syslog-enabled").checked        = !!appSettings.syslog_enabled;
     document.getElementById("setting-syslog-host").value             = appSettings.syslog_host          || "localhost";
@@ -2063,9 +2105,12 @@
       smtp_from:            document.getElementById("setting-smtp-from").value.trim(),
       smtp_tls:             document.getElementById("setting-smtp-tls").checked,
       // Security settings
-      ssh_host_key_policy:  document.getElementById("setting-ssh-host-key-policy").value,
-      error_detail:         document.getElementById("setting-error-detail").value,
-      webhook_allowlist:    document.getElementById("setting-webhook-allowlist").value.trim(),
+      ssh_host_key_policy:       document.getElementById("setting-ssh-host-key-policy").value,
+      error_detail:              document.getElementById("setting-error-detail").value,
+      webhook_allowlist:         document.getElementById("setting-webhook-allowlist").value.trim(),
+      // Access control settings
+      auth_enabled:              document.getElementById("setting-auth-enabled").checked,
+      session_lifetime_minutes:  parseInt(document.getElementById("setting-session-lifetime").value) || 60,
       // Syslog settings
       syslog_enabled:       document.getElementById("setting-syslog-enabled").checked,
       syslog_host:          document.getElementById("setting-syslog-host").value.trim(),
@@ -2088,6 +2133,39 @@
       msg.classList.remove("hidden");
       setTimeout(() => msg.classList.add("hidden"), 2500);
     } catch (_) {}
+  });
+
+  // ══════════════════════════════════════════════════ API KEY ══
+  document.getElementById("generateApiKeyBtn").addEventListener("click", async function () {
+    if (!confirm("Generate a new API key? Any existing key will be invalidated.")) return;
+    try {
+      const res  = await fetch("/settings/generate-api-key", { method: "POST" });
+      const data = await res.json();
+      if (data.api_key) {
+        document.getElementById("apiKeyValue").value = data.api_key;
+        document.getElementById("apiKeyDisplay").style.display = "block";
+        document.getElementById("apiKeyStatus").textContent = "Key is set.";
+        appSettings.api_key_hash = "set";  // sentinel so UI reflects key exists
+      }
+    } catch (_) {}
+  });
+
+  document.getElementById("revokeApiKeyBtn").addEventListener("click", async function () {
+    if (!confirm("Revoke the API key? Anyone using it will lose access immediately.")) return;
+    try {
+      await fetch("/settings/revoke-api-key", { method: "POST" });
+      document.getElementById("apiKeyDisplay").style.display = "none";
+      document.getElementById("apiKeyStatus").textContent = "No key configured.";
+      appSettings.api_key_hash = "";
+    } catch (_) {}
+  });
+
+  document.getElementById("copyApiKeyBtn").addEventListener("click", function () {
+    const val = document.getElementById("apiKeyValue").value;
+    navigator.clipboard.writeText(val).then(() => {
+      this.textContent = "Copied!";
+      setTimeout(() => { this.textContent = "Copy"; }, 2000);
+    });
   });
 
   // ══════════════════════════════════════════════════ TEST SMTP ══
