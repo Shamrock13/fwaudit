@@ -17,7 +17,7 @@ from datetime import datetime
 
 SCHEDULES_FOLDER = os.environ.get("SCHEDULES_FOLDER", "/tmp/flintlock_schedules")
 
-VALID_VENDORS    = ("asa", "ftd", "fortinet", "paloalto")
+VALID_VENDORS    = ("asa", "ftd", "fortinet", "iptables", "juniper", "nftables", "paloalto", "pfsense")
 VALID_FREQS      = ("hourly", "daily", "weekly")
 VALID_FRAMEWORKS = ("", "cis", "hipaa", "nist", "pci", "soc2", "stig")
 VALID_DOW        = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")

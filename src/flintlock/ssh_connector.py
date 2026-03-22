@@ -139,14 +139,111 @@ def _pull_ftd(host, port, username, password, timeout, host_key_policy="warn"):
     return _pull_asa(host, port, username, password, timeout, host_key_policy)
 
 
+# ── Juniper SRX ───────────────────────────────────────────────────────────────
+
+def _pull_juniper(host, port, username, password, timeout, host_key_policy="warn"):
+    """Pull Juniper SRX config in set-format via Junos CLI SSH shell.
+
+    Disables the screen-length pager first so the full config is returned
+    without interactive ``---more---`` prompts.
+    """
+    _require_paramiko()
+    client = _make_client(host, port, username, password, timeout, host_key_policy)
+    try:
+        ch = client.invoke_shell()
+        time.sleep(2)
+        ch.recv(RECV_CHUNK)                    # flush banner / login output
+        ch.send("set cli screen-length 0\n")
+        time.sleep(0.5)
+        ch.recv(RECV_CHUNK)
+        ch.send("show configuration | display set\n")
+        return _read_until_idle(ch, timeout=max(timeout, 90))
+    finally:
+        client.close()
+
+
+# ── pfSense ───────────────────────────────────────────────────────────────────
+
+def _pull_pfsense(host, port, username, password, timeout, host_key_policy="warn"):
+    """Pull pfSense config.xml via SSH exec_command.
+
+    Requires the SSH user to have shell access (not just the menu).
+    The config file is at /conf/config.xml on all modern pfSense releases.
+    """
+    _require_paramiko()
+    client = _make_client(host, port, username, password, timeout, host_key_policy)
+    try:
+        stdin, stdout, stderr = client.exec_command(
+            "cat /conf/config.xml", timeout=timeout
+        )
+        out = stdout.read()
+        return out.decode("utf-8", errors="ignore")
+    finally:
+        client.close()
+
+
+# ── iptables (Linux) ──────────────────────────────────────────────────────────
+
+def _pull_iptables(host, port, username, password, timeout, host_key_policy="warn"):
+    """Pull iptables rules via SSH using iptables-save.
+
+    Tries the direct command first; falls back to sudo if the account is not root.
+    The connecting user must have password-less sudo or run as root.
+    """
+    _require_paramiko()
+    client = _make_client(host, port, username, password, timeout, host_key_policy)
+    try:
+        stdin, stdout, stderr = client.exec_command(
+            "iptables-save 2>/dev/null || sudo iptables-save 2>/dev/null",
+            timeout=timeout,
+        )
+        out = stdout.read()
+        return out.decode("utf-8", errors="ignore")
+    finally:
+        client.close()
+
+
+# ── nftables (Linux) ──────────────────────────────────────────────────────────
+
+def _pull_nftables(host, port, username, password, timeout, host_key_policy="warn"):
+    """Pull nftables ruleset via SSH using nft list ruleset.
+
+    Tries the direct command first; falls back to sudo if needed.
+    """
+    _require_paramiko()
+    client = _make_client(host, port, username, password, timeout, host_key_policy)
+    try:
+        stdin, stdout, stderr = client.exec_command(
+            "nft list ruleset 2>/dev/null || sudo nft list ruleset 2>/dev/null",
+            timeout=timeout,
+        )
+        out = stdout.read()
+        return out.decode("utf-8", errors="ignore")
+    finally:
+        client.close()
+
+
 # ── Main entrypoint ───────────────────────────────────────────────────────────
 
-_SUFFIXES = {"asa": ".txt", "ftd": ".txt", "fortinet": ".txt", "paloalto": ".xml"}
-_PULLERS  = {
+_SUFFIXES = {
+    "asa":      ".txt",
+    "ftd":      ".txt",
+    "fortinet": ".txt",
+    "iptables": ".txt",
+    "juniper":  ".txt",
+    "nftables": ".txt",
+    "paloalto": ".xml",
+    "pfsense":  ".xml",
+}
+_PULLERS = {
     "asa":      _pull_asa,
     "ftd":      _pull_ftd,
     "fortinet": _pull_fortinet,
+    "iptables": _pull_iptables,
+    "juniper":  _pull_juniper,
+    "nftables": _pull_nftables,
     "paloalto": _pull_paloalto,
+    "pfsense":  _pull_pfsense,
 }
 
 
