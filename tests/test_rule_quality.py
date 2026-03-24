@@ -66,7 +66,6 @@ def test_asa_shadow():
     print(f"  PASS  test_asa_shadow — {len(result)} shadow findings detected")
     for f in result:
         print(f"        [{f['severity']}] {f['message'][:100]}")
-    return result
 
 
 # ── Test 2: Fortinet shadow detection ────────────────────────────────────────
@@ -104,7 +103,6 @@ def test_fortinet_shadow():
     print(f"  PASS  test_fortinet_shadow — {len(result)} shadow findings detected")
     for f in result:
         print(f"        [{f['severity']}] {f['message'][:100]}")
-    return result
 
 
 # ── Test 3: Palo Alto shadow detection ───────────────────────────────────────
@@ -140,7 +138,6 @@ def test_paloalto_shadow():
     print(f"  PASS  test_paloalto_shadow — {len(result)} shadow findings detected")
     for f in result:
         print(f"        [{f['severity']}] {f['message'][:100]}")
-    return result
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────

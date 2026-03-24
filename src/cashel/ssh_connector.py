@@ -5,7 +5,7 @@ import uuid
 import tempfile
 
 try:
-    import paramiko
+    import paramiko  # type: ignore[import-untyped]
     PARAMIKO_AVAILABLE = True
 except ImportError:
     PARAMIKO_AVAILABLE = False
