@@ -515,7 +515,7 @@ def _nft_rule_sensitive_ports(rule_text: str) -> list[tuple[int, str]]:
 
 def check_internet_ingress_nftables(tables: list) -> list[dict]:
     """Flag nftables input-chain accept rules that expose sensitive ports."""
-    findings = []
+    findings: list[dict] = []
     if _nft_is_json_format(tables):
         # JSON format: limited rule info available — skip deep port analysis
         return findings
@@ -546,7 +546,7 @@ def check_internet_ingress_nftables(tables: list) -> list[dict]:
 
 def check_any_any_accept_nftables(tables: list) -> list[dict]:
     """Flag rules that accept all traffic unconditionally in the input chain."""
-    findings = []
+    findings: list[dict] = []
     if _nft_is_json_format(tables):
         return findings
 
@@ -570,7 +570,7 @@ def check_any_any_accept_nftables(tables: list) -> list[dict]:
 
 def check_missing_logging_nftables(tables: list) -> list[dict]:
     """Flag input chains with accept rules but no log statements."""
-    findings = []
+    findings: list[dict] = []
     if _nft_is_json_format(tables):
         return findings
 
@@ -595,7 +595,7 @@ def check_missing_logging_nftables(tables: list) -> list[dict]:
 
 def check_icmp_unrestricted_nftables(tables: list) -> list[dict]:
     """Flag unrestricted ICMP accept without rate-limiting in input chain."""
-    findings = []
+    findings: list[dict] = []
     if _nft_is_json_format(tables):
         return findings
 
