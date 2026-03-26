@@ -31,3 +31,11 @@ keygen.py
 CNAME
 .claude/
 .wrangler/
+
+# Internal planning and ops docs — never publish
+CLAUDE.md
+PLAN.md
+DEMO_SETUP.md
+
+# Demo workflow lives in private repo only
+.github/workflows/demo-deploy.yml
