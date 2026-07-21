@@ -4,6 +4,8 @@
 
 **Cashel** is a self-hosted firewall audit and remediation platform for network engineers, MSPs, and security teams. It audits uploaded firewall configurations and live SSH pulls, preserves evidence for each finding where the parser supports it, and produces remediation-oriented reports and exports that can be reviewed, repeated, and defended.
 
+**Website:** [cashel.app](https://cashel.app)
+
 The product direction is depth over breadth: trusted, evidence-backed, reproducible findings for the platforms engineers operate every day. Near-term work should prioritize Fortinet, Palo Alto Networks, and Cisco ASA/FTD correctness, SSO readiness, security hardening, operational clarity, and policy-as-code workflows before adding more vendors.
 
 **Demo:** [demo.cashel.app](https://demo.cashel.app)
