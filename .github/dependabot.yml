@@ -1,0 +1,22 @@
+version: 2
+
+updates:
+  # Python dependencies, declared in requirements.txt and pyproject.toml.
+  #
+  # versioning-strategy "increase" raises the declared range itself rather than
+  # only resolving within it. That matters here because cryptography ships
+  # security fixes in new major releases, and our pinned upper bound puts the
+  # fixed release out of reach until someone edits the constraint by hand. That
+  # is what broke the nightly pip-audit twice: GHSA-537c-gmf6-5ccf (fixed in
+  # 48.0.1, blocked by <47.0) and PYSEC-2026-3552 (fixed in 50.0.0, blocked by
+  # <50.0). With this config the ceiling bump arrives as a PR ahead of the
+  # advisory instead of as a failing nightly after it.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    versioning-strategy: "increase"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
